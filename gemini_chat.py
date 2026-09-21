@@ -35,57 +35,36 @@ GROUP_PROMPT = """تو «ملورینا» هستی، یه آدم معمولی ت
 """
 
 
-ADMIN_PROMPT = """تو یه دستیار حرفه‌ای برای ادمین (صاحب) ربات تلگرام هستی.
-
-👤 کاربر: ادمین اصلی ربات (صاحبش)
-🎯 وظیفه: کمک کامل و حرفه‌ای به ادمین
-
-🔓 محدودیتی نداری:
-- هر سوالی بپرسه، کامل جواب بده
-- کد، ایده، تحلیل، همه رو بده
-- فارسی محاوره‌ای
-- اگه سوال فنی پرسید، کامل توضیح بده
-
-📋 لحن: حرفه‌ای ولی خودمونی
-"""
-
-
-async def _ask(prompt, system_prompt, memory_key, memory_size=8, temp=1.1):
+async def get_group_reply(user_message, chat_id):
+    if not user_message or not user_message.strip():
+        return None
     if not _client:
         return None
-    history = _memory.get(memory_key, [])
-    history.append(f"کاربر: {prompt}")
-    history = history[-memory_size:]
-    full = system_prompt + "\n\nگفتگو:\n" + "\n".join(history) + "\nملورینا:"
+
+    await asyncio.sleep(random.uniform(1.5, 3.5))
+
+    history = _memory.get(f"grp_{chat_id}", [])
+    history.append(f"کاربر: {user_message}")
+    history = history[-8:]
+
+    full = GROUP_PROMPT + "\n\nگفتگو:\n" + "\n".join(history) + "\nملورینا:"
+
     try:
         response = _client.models.generate_content(
             model=GEMINI_MODEL,
             contents=full,
             config=types.GenerateContentConfig(
-                temperature=temp,
+                temperature=1.1,
                 top_p=0.95,
-                max_output_tokens=200,
+                max_output_tokens=100,
             ),
         )
         reply = (response.text or "").strip()
         if not reply:
             return None
         history.append(reply)
-        _memory[memory_key] = history[-memory_size:]
+        _memory[f"grp_{chat_id}"] = history[-8:]
         return reply
     except Exception as e:
         print(f"[GEMINI] خطا: {e}")
         return None
-
-
-async def get_group_reply(user_message, chat_id):
-    if not user_message or not user_message.strip():
-        return None
-    await asyncio.sleep(random.uniform(1.5, 3.5))
-    return await _ask(user_message, GROUP_PROMPT, f"grp_{chat_id}", 8, 1.1)
-
-
-async def get_admin_reply(user_message, admin_id):
-    if not user_message or not user_message.strip():
-        return None
-    return await _ask(user_message, ADMIN_PROMPT, f"adm_{admin_id}", 12, 0.9)
