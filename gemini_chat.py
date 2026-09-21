@@ -1,16 +1,7 @@
 import asyncio
 import random
-from google import genai
-from google.genai import types
+import aiohttp
 from config import GEMINI_API_KEY, GEMINI_MODEL
-
-_client = None
-if GEMINI_API_KEY:
-    try:
-        _client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"[GEMINI] init: {e}")
-
 
 _memory = {}
 
@@ -37,15 +28,15 @@ EXAMPLES (in Persian):
 Now reply to the user in Persian:"""
 
 
+API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+
+
 async def get_group_reply(user_message, chat_id):
     if not user_message or not user_message.strip():
         return None
 
     if not GEMINI_API_KEY:
         return "❌ خطا: GEMINI_API_KEY تو env نیست"
-
-    if not _client:
-        return "❌ خطا: کلاینت Gemini ساخته نشد"
 
     await asyncio.sleep(random.uniform(1.5, 3.5))
 
@@ -55,41 +46,47 @@ async def get_group_reply(user_message, chat_id):
 
     full = GROUP_PROMPT + "\n\n" + "\n".join(history) + "\nMelorina:"
 
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": full}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 1.1,
+            "topP": 0.95,
+            "maxOutputTokens": 200,
+        }
+    }
+
+    url = API_URL.format(model=GEMINI_MODEL, key=GEMINI_API_KEY)
+
     try:
-        response = _client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=full,
-            config=types.GenerateContentConfig(
-                temperature=1.1,
-                top_p=0.95,
-                max_output_tokens=200,
-            ),
-        )
-        reply = (response.text or "").strip()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=30) as resp:
+                data = await resp.json()
+
+        if resp.status != 200:
+            err_msg = data.get("error", {}).get("message", str(data))
+            return f"❌ خطا ({resp.status}):\n{err_msg[:250]}"
+
+        # استخراج متن
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return "❌ خطا: Gemini جواب خالی داد"
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        reply = "".join(p.get("text", "") for p in parts).strip()
+
         if not reply:
-            # ─── اگه خالی بود، از candidates بخون ───
-            try:
-                if response.candidates and len(response.candidates) > 0:
-                    parts = response.candidates[0].content.parts
-                    reply = "".join(p.text for p in parts if hasattr(p, "text")).strip()
-            except Exception:
-                pass
-        if not reply:
-            return "❌ خطا: Gemini جواب خالی داد — دوباره بفرست"
+            return "❌ خطا: جواب خالی"
+
         history.append(f"Melorina: {reply}")
         _memory[f"grp_{chat_id}"] = history[-8:]
         return reply
+
+    except asyncio.TimeoutError:
+        return "❌ خطا: تایم‌اوت — دوباره بفرست"
     except Exception as e:
         err = str(e)[:300]
-        if "location" in err.lower():
-            return "❌ خطا: کلید از IP ایران — VPN لازمه"
-        elif "api key" in err.lower() or "invalid" in err.lower():
-            return "❌ خطا: کلید اشتباهه"
-        elif "not found" in err.lower():
-            return f"❌ خطا: مدل {GEMINI_MODEL} پیدا نشد"
-        elif "quota" in err.lower() or "rate" in err.lower():
-            return "❌ خطا: سهمیه تموم شده"
-        elif "latin-1" in err.lower() or "encode" in err.lower():
-            return "❌ خطا: مشکل انکودینگ"
-        else:
-            return f"❌ خطا:\n{err}"
+        return f"❌ خطا: {err}"
