@@ -20,6 +20,7 @@ from schedule_panel import schedule_panel_keyboard
 from settings_panel import settings_keyboard
 from banner import send_banner, broadcast_banner
 from auto_reply import find_reply
+from multi_reply import find_multi_reply
 from scheduler import process_scheduled
 from backup import backup_loop
 from onetime_link import create_onetime_link, use_onetime_link, generate_bot_link
@@ -59,7 +60,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
 
-    # ─── لینک یکبار مصرف ───
     if args and args[0].startswith("otl_"):
         code = args[0][4:]
         result = await use_onetime_link(code)
@@ -82,7 +82,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_banner(context, user.id)
         return
 
-    # ─── سفارش کتاب از وب ───
     if args and args[0].startswith("buy_"):
         book_name = args[0][4:].replace("_", " ")
         await notify_admin_new_order(context, user, book_name)
@@ -91,7 +90,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ─── استارت معمولی ───
     if not await is_user_joined(context, user.id):
         await send_join_prompt(update, context)
         return
@@ -113,7 +111,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
-    # ─── کاربر ───
     if data == "check_join":
         await check_join_callback(update, context)
         return
@@ -134,7 +131,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ─── ادمین ───
     if not is_admin(user_id):
         return
 
@@ -165,7 +161,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=admin_keyboard())
         return
 
-    # ─── تنظیمات ───
     if data == "admin_settings":
         ap = await db.get_setting("auto_post_enabled", "1")
         ar = await db.get_setting("auto_reply_enabled", "1")
@@ -202,7 +197,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("تعداد دعوت رو بفرست:")
         return
 
-    # ─── فایل ───
     if data == "admin_add_file":
         await db.set_fsm(user_id, "awaiting_file")
         await query.edit_message_text("📎 فایل رو با کپشن بفرست:")
@@ -258,7 +252,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=admin_keyboard())
         return
 
-    # ─── کانال ───
     if data == "admin_add_channel":
         await db.set_fsm(user_id, "awaiting_channel")
         await query.edit_message_text("📢 آیدی کانال رو بفرست:")
@@ -289,7 +282,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=admin_keyboard())
         return
 
-    # ─── بنر ───
     if data == "admin_set_banner":
         await db.set_fsm(user_id, "awaiting_banner")
         await query.edit_message_text("🖼 بنر رو بفرست:")
@@ -303,7 +295,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ─── Auto-Post ───
     if data == "ap_menu":
         await query.edit_message_text(
             "📮 پست زمان‌بندی کانال\n\nنوع پست:",
@@ -357,22 +348,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ─── Auto-Reply ───
     if data == "ar_menu":
         ar_on = await db.get_setting("auto_reply_enabled", "1")
         status = "✅ فعال" if ar_on == "1" else "❌ غیرفعال"
-        replies = await db.get_all_auto_replies()
+        single = await db.get_all_auto_replies()
+        multi = await db.get_all_multi_replies()
         kb = [
-            [InlineKeyboardButton("➕ افزودن جواب", callback_data="ar_add")],
+            [InlineKeyboardButton("➕ افزودن جواب تک", callback_data="ar_add")],
+            [InlineKeyboardButton("➕➕ افزودن جواب چندگانه", callback_data="mr_add")],
             [InlineKeyboardButton("📋 لیست جواب‌ها", callback_data="ar_list")],
             [InlineKeyboardButton("🗑 حذف جواب", callback_data="ar_delete")],
             [InlineKeyboardButton(f"وضعیت: {status}", callback_data="toggle_auto_reply")],
             [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_back")],
         ]
         await query.edit_message_text(
-            f"💬 جواب‌های آماده گروه\n\nتعداد: {len(replies)}",
+            f"💬 جواب‌های آماده گروه\n\n"
+            f"تک‌جوابی: {len(single)}\n"
+            f"چندجوابی: {len(multi)}",
             reply_markup=InlineKeyboardMarkup(kb)
         )
+        return
+
+    if data == "mr_add":
+        await db.set_fsm(user_id, "mr_step1")
+        await query.edit_message_text("🔑 کلمه کلیدی رو بفرست (مثلاً: ملورینا):")
         return
 
     if data == "ar_add":
@@ -382,12 +381,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "ar_list":
         replies = await db.get_all_auto_replies()
-        if not replies:
+        multi = await db.get_all_multi_replies()
+        if not replies and not multi:
             await query.edit_message_text("📭 جوابی نیست.", reply_markup=admin_keyboard())
             return
-        text = "📋 جواب‌های آماده:\n\n"
-        for r in replies[:30]:
-            text += f"#{r[0]} | 🔑 {r[1]}\n💬 {r[2][:50]}\n\n"
+        text = "📋 جواب‌ها:\n\n"
+        if multi:
+            text += "🔀 چندجوابی:\n"
+            import json as _json
+            for m in multi[:15]:
+                try:
+                    cnt = len(_json.loads(m[2]))
+                except Exception:
+                    cnt = 0
+                text += f"#{m[0]} | 🔑 {m[1]} | {cnt} جواب\n"
+            text += "\n"
+        if replies:
+            text += "🔹 تک‌جوابی:\n"
+            for r in replies[:15]:
+                text += f"#{r[0]} | 🔑 {r[1]}\n"
         await query.edit_message_text(text, reply_markup=admin_keyboard())
         return
 
@@ -407,7 +419,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.", reply_markup=admin_keyboard())
         return
 
-    # ─── لینک یکبار مصرف ───
     if data == "otl_menu":
         links = await db.get_all_onetime_links()
         kb = [
@@ -474,7 +485,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.", reply_markup=admin_keyboard())
         return
 
-    # ─── سفارش‌های کتاب ───
     if data == "orders_menu":
         orders = await db.get_all_book_orders()
         if not orders:
@@ -522,7 +532,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, parse_mode="Markdown")
         return
 
-    # ─── پنل پیام به ادمین ───
     if data == "sup_menu":
         msgs = await db.get_all_support_msgs(30)
         support_text = await db.get_setting("support_text", CONTACT_ADMIN)
@@ -583,24 +592,22 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state, data = await db.get_fsm(user.id)
 
-    # ─── گروه: جواب خودکار ───
     if msg.chat.type in ("group", "supergroup"):
         ar_on = await db.get_setting("auto_reply_enabled", "1")
         if ar_on == "1" and msg.text:
-            reply = await find_reply(msg.text)
+            reply = await find_multi_reply(msg.text)
+            if not reply:
+                reply = await find_reply(msg.text)
             if reply:
                 await msg.reply_text(reply)
         return
 
-    # ─── چت خصوصی ───
     if not await is_user_joined(context, user.id):
         await send_join_prompt(update, context)
         return
 
-    # ─── FSM ادمین ───
     if is_admin(user.id):
 
-        # ─── ویرایش متن‌ها ───
         if state == "sup_edit_support":
             await db.set_setting("support_text", msg.text or "")
             await msg.reply_text("✅ متن پشتیبانی آپدیت شد.")
@@ -613,7 +620,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.clear_fsm(user.id)
             return
 
-        # ─── سفارش: گرفتن قیمت ───
         if state == "order_step_price":
             oid = data.get("order_id")
             price = (msg.text or "").strip()
@@ -639,7 +645,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.clear_fsm(user.id)
             return
 
-        # ─── فایل ───
         if state == "awaiting_file":
             ftype, file_id = None, None
             if msg.photo:
@@ -716,7 +721,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.clear_fsm(user.id)
             return
 
-        # ─── Auto-Post ───
         if state == "ap_step1":
             txt = (msg.text or "").strip()
             if txt.lower() == "ok" and data.get("default_ch"):
@@ -770,7 +774,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ─── Auto-Reply ───
         if state == "ar_step1":
             data["keyword"] = msg.text or ""
             await db.set_fsm(user.id, "ar_step2", data)
@@ -796,7 +799,43 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("✅ جواب اضافه شد.")
             return
 
-        # ─── Onetime Link ───
+        if state == "mr_step1":
+            data["keyword"] = msg.text or ""
+            data["replies"] = []
+            await db.set_fsm(user.id, "mr_step2", data)
+            await msg.reply_text(
+                "✅ کلمه ثبت شد.\n\n"
+                "💬 الان جواب‌ها رو **یکی‌یکی** بفرست.\n"
+                "هر جواب تو یه پیام جدا.\n\n"
+                "وقتی تموم شد، بنویس: `done`"
+            )
+            return
+
+        if state == "mr_step2":
+            txt = (msg.text or "").strip()
+            if txt.lower() == "done":
+                replies = data.get("replies", [])
+                if not replies:
+                    await msg.reply_text("❌ هیچ جوابی ندادی. دوباره شروع کن.")
+                    await db.clear_fsm(user.id)
+                    return
+                await db.add_multi_reply(data["keyword"], replies, exact_match=0)
+                await db.clear_fsm(user.id)
+                await msg.reply_text(
+                    f"✅ ذخیره شد!\n\n"
+                    f"🔑 کلمه: {data['keyword']}\n"
+                    f"💬 تعداد جواب: {len(replies)}"
+                )
+                return
+            else:
+                data.setdefault("replies", []).append(txt)
+                await db.set_fsm(user.id, "mr_step2", data)
+                await msg.reply_text(
+                    f"✅ ثبت شد ({len(data['replies'])} جواب)\n"
+                    f"جواب بعدی رو بفرست یا `done` بزن."
+                )
+                return
+
         if state == "otl_step1":
             try:
                 hours = int(msg.text.strip())
@@ -818,11 +857,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # ─── FSM کاربر: پیام به ادمین ───
     if state == "awaiting_support":
         mtype = data.get("type", "support")
 
-        # ذخیره تو دیتابیس
         file_id_db = None
         file_type_db = None
         if msg.photo:
@@ -841,7 +878,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_id_db, file_type_db
         )
 
-        # ارسال به ادمین
         tag = "💰 حمایت مالی" if mtype == "donate" else "📩 پیام جدید"
         text = (
             f"{tag}\n\n"
@@ -867,7 +903,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.clear_fsm(user.id)
         return
 
-    # ─── فایل معمولی ───
     if msg.photo or msg.video or msg.document or msg.audio or msg.voice or msg.animation:
         await msg.reply_text(FILE_SENT)
         await send_banner(context, msg.chat_id)
@@ -876,10 +911,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text(FILE_NOT_FOUND)
 
 
-# ============ Post Init ============
+# ============ Post Init (اصلاح شده) ============
 async def post_init(app):
-    asyncio.create_task(process_scheduled(app))
-    asyncio.create_task(backup_loop(app))
+    """این تابع بعد از راه‌اندازی app اجرا میشه"""
+    loop = asyncio.get_event_loop()
+    loop.create_task(process_scheduled(app))
+    loop.create_task(backup_loop(app))
 
 
 # ============ اجرا ============
@@ -888,19 +925,22 @@ def main():
         print("❌ BOT_TOKEN نیست!")
         return
 
+    # ساخت دیتابیس
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(db.init_db())
     loop.close()
 
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    # ساخت اپ
+    app = Application.builder().token(BOT_TOKEN).build()
 
+    # هندلرها
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, message_handler))
 
     print("🚀 ربات روشن شد...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
 
 
 if __name__ == "__main__":
