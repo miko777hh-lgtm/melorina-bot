@@ -8,7 +8,6 @@ from telegram.ext import (
 
 from config import BOT_TOKEN
 from replies import get_ready_reply
-from gemini_chat import ask_gemini
 
 
 async def handle_message(
@@ -21,82 +20,56 @@ async def handle_message(
     if not message:
         return
 
+    chat = update.effective_chat
+
+    if not chat:
+        return
+
     # فقط گروه و سوپرگروه
-    if update.effective_chat.type not in {
+    if chat.type not in {
         "group",
         "supergroup",
     }:
         return
 
-    # پیام خود ربات نادیده گرفته شود
-    if message.from_user and message.from_user.is_bot:
+    # پیام خود ربات
+    if (
+        message.from_user
+        and message.from_user.is_bot
+    ):
         return
 
-    text = message.text or message.caption or ""
+    text = message.text or ""
 
-    text = text.strip()
-
-    if not text:
+    if not text.strip():
         return
 
-    chat_id = update.effective_chat.id
+    chat_id = chat.id
 
-    # -----------------------------------------------------
-    # 1. اول فقط پیام‌های خیلی رایج
-    # -----------------------------------------------------
-
-    ready = get_ready_reply(
+    answer = get_ready_reply(
         chat_id,
         text
     )
 
-    if ready:
-        await message.reply_text(
-            ready,
-            do_quote=True
-        )
+    # اگر برای پیام جواب آماده نداریم،
+    # هیچ جوابی نده.
+    if answer is None:
         return
 
-    # -----------------------------------------------------
-    # 2. بقیه مستقیماً Gemini
-    # -----------------------------------------------------
-
-    answer = await ask_gemini(
-        chat_id,
-        text
-    )
-
-    if answer:
+    try:
         await message.reply_text(
             answer,
             do_quote=True
         )
-        return
 
-    # -----------------------------------------------------
-    # 3. Gemini موقتاً از دسترس خارج شد
-    # اینجا ربات خودش جواب می‌دهد.
-    # اما فقط یک جواب آماده مرتبط.
-    # -----------------------------------------------------
-
-    fallback = get_ready_reply(
-        chat_id,
-        text
-    )
-
-    if fallback:
-        await message.reply_text(
-            fallback,
-            do_quote=True
+    except Exception as error:
+        print(
+            f"[TELEGRAM ERROR] {type(error).__name__}: {error}"
         )
-        return
-
-    # اگر برای این پیام جواب آماده‌ای نداریم،
-    # بهتر است اصلاً پیام مصنوعی و تکراری نفرستیم.
-    # دفعه بعد که Gemini برگشت، پاسخ می‌دهد.
 
 
 def main():
+
     app = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -105,16 +78,14 @@ def main():
 
     app.add_handler(
         MessageHandler(
-            (
-                filters.TEXT
-                | filters.CaptionRegex(".+")
-            )
-            & ~filters.COMMAND,
+            filters.TEXT & ~filters.COMMAND,
             handle_message
         )
     )
 
-    print("Melorina is running...")
+    print(
+        "Melorina is running..."
+    )
 
     app.run_polling(
         allowed_updates=Update.ALL_TYPES
