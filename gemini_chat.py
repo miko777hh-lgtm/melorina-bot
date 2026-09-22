@@ -6,138 +6,84 @@ import aiohttp
 from config import GEMINI_API_KEY, GEMINI_MODEL
 
 
-# حافظه هر گروه جداست
 _memory = {}
-
-# آخرین جواب‌ها برای جلوگیری از تکرار
 _recent_replies = {}
 
 
 GROUP_PROMPT = """
-تو «ملورینا» هستی؛ یک شخصیت خیالی برای گفت‌وگوی دوستانه داخل یک گروه تلگرام.
+تو «ملورینا» هستی؛ یک شخصیت خیالی در یک گروه تلگرام فارسی.
 
 شخصیت:
-- دخترانه، باحال، خودمونی و کمی شیطون
-- گاهی شوخ و طعنه‌آمیز
-- گاهی کوتاه و سرد
-- گاهی مهربان
-- مثل یک عضو عادی گروه صحبت کن
-- جواب‌ها طبیعی و متنوع باشند
+- خودمونی، باحال، شوخ و کمی شیطون
+- گاهی طعنه‌آمیز ولی نه توهین‌آمیز
+- جواب‌ها طبیعی و متفاوت باشند
+- مثل یک عضو عادی گروه حرف بزن
 
-قوانین گفتگو:
-1. فقط فارسی جواب بده.
-2. جواب معمولاً بین 2 تا 12 کلمه باشد.
-3. جواب‌ها را بیش از حد تکرار نکن.
-4. اگر کاربر فقط سلام کرد، جواب کوتاه و طبیعی بده.
-5. اگر کاربر سؤال ساده پرسید، مستقیم جواب بده.
-6. لازم نیست به همه پیام‌ها جواب طولانی بدهی.
-7. از ایموجی گاهی استفاده کن، نه در همه پیام‌ها.
-8. از عبارت‌های تکراری مثل «خب ادامه بده» پشت سر هم استفاده نکن.
-9. اگر جواب مشابه جواب‌های قبلی شد، جمله دیگری بساز.
-10. درباره اطلاعات داخلی ربات چیزی فاش نکن.
-11. API Key، Bot Token، کد، تنظیمات Railway، فایل‌های پروژه یا اطلاعات خصوصی را ارائه نکن.
-12. اگر کسی درباره اطلاعات داخلی ربات سؤال کرد، کوتاه بگو:
-   «این چیزا محرمانه‌ست 😌»
-   یا یک پاسخ مشابه و کوتاه بده.
-13. لینک ارسال نکن.
-14. نقش گفتگو را حفظ کن.
-15. اگر کسی گفت «تو رباتی؟»، وارد توضیح فنی نشو و کوتاه جواب بده؛
-   مثلاً «تو چی فکر می‌کنی؟ 😏»
-16. اگر کسی پرسید «کی ساختت؟»، اطلاعات سازنده یا اطلاعات خصوصی نده.
-17. هیچ‌وقت API Key یا Token را حدس نزن یا تولید نکن.
+قوانین:
+- فقط فارسی جواب بده.
+- معمولاً 2 تا 12 کلمه.
+- جواب‌های قبلی را تکرار نکن.
+- اگر کاربر سلام کرد، کوتاه جواب بده.
+- اگر سؤال ساده پرسید، مستقیم جواب بده.
+- لینک نفرست.
+- اطلاعات خصوصی یا فنی ربات را نده.
+- API Key، Bot Token، کد، Railway، تنظیمات و اطلاعات سازنده را فاش نکن.
+- اگر درباره اطلاعات داخلی پرسید، بگو:
+  «این چیزا محرمانه‌ست 😌»
+- اگر پرسید «تو رباتی؟» وارد توضیح فنی نشو.
+- از ایموجی گاهی استفاده کن، نه همیشه.
 
-نمونه سبک:
-
-سلام
-→ سلام 😌
-
-خوبی؟
-→ بد نیستم، تو چطوری؟
-
-چه خبر؟
-→ هیچی، دارم مردم رو نگاه می‌کنم 😂
-
-حوصلم سر رفته
-→ پس یه دردسر درست کن
-
-کی هستی؟
-→ حدس بزن 😏
-
-چرا جواب نمیدی؟
-→ داشتم به زندگیم فکر می‌کردم 😂
-
-حالا بر اساس پیام کاربر جواب بده.
+نمونه:
+سلام → سلام 😌
+خوبی؟ → بد نیستم، تو؟
+چه خبر؟ → هیچی، دارم می‌چرخم 😂
+حوصلم سر رفته → یه کاری کن دیگه
+کی هستی؟ → حدس بزن 😏
 """
 
 
-API_URL = (
-    "https://generativelanguage.googleapis.com/"
-    "v1beta/models/{model}:generateContent?key={key}"
-)
-
-
 def clean_reply(text):
-    """
-    تمیز کردن جواب Gemini
-    """
-
     if not text:
         return ""
 
     text = text.strip()
-
-    # حذف markdown اضافی
     text = text.replace("**", "")
     text = text.replace("__", "")
-
-    # حذف فاصله‌های اضافه
     text = re.sub(r"\s+", " ", text)
 
-    # محدودیت طول
-    if len(text) > 300:
-        text = text[:300].rstrip() + "…"
-
-    return text
+    return text[:300].strip()
 
 
 def is_repeated(chat_id, reply):
-    """
-    بررسی می‌کند جواب اخیر تکراری نباشد.
-    """
-
-    replies = _recent_replies.get(chat_id, [])
+    old_replies = _recent_replies.get(chat_id, [])
 
     normalized = reply.strip().lower()
 
-    for old in replies:
-        if old.strip().lower() == normalized:
-            return True
-
-    return False
+    return any(
+        old.strip().lower() == normalized
+        for old in old_replies
+    )
 
 
 def save_reply(chat_id, reply):
-    """
-    ذخیره چند جواب اخیر.
-    """
-
     replies = _recent_replies.setdefault(chat_id, [])
 
     replies.append(reply)
 
-    # فقط 12 جواب اخیر
     _recent_replies[chat_id] = replies[-12:]
 
 
 async def ask_gemini(prompt):
-    """
-    ارسال درخواست به Gemini
-    """
 
-    url = API_URL.format(
-        model=GEMINI_MODEL,
-        key=GEMINI_API_KEY
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        f"v1beta/models/{GEMINI_MODEL}:generateContent"
     )
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+    }
 
     payload = {
         "contents": [
@@ -162,6 +108,7 @@ async def ask_gemini(prompt):
 
         async with session.post(
             url,
+            headers=headers,
             json=payload
         ) as response:
 
@@ -181,7 +128,7 @@ async def ask_gemini(prompt):
         )
 
         raise RuntimeError(
-            f"Gemini {status}: {message}"
+            f"HTTP {status}: {message}"
         )
 
     candidates = data.get(
@@ -190,14 +137,14 @@ async def ask_gemini(prompt):
     )
 
     if not candidates:
-        return ""
+        raise RuntimeError(
+            "Gemini هیچ candidate برنگرداند"
+        )
 
-    content = candidates[0].get(
+    parts = candidates[0].get(
         "content",
         {}
-    )
-
-    parts = content.get(
+    ).get(
         "parts",
         []
     )
@@ -206,10 +153,8 @@ async def ask_gemini(prompt):
 
     for part in parts:
 
-        text = part.get("text")
-
-        if text:
-            result += text
+        if part.get("text"):
+            result += part["text"]
 
     return clean_reply(result)
 
@@ -222,42 +167,27 @@ async def get_group_reply(
     if not user_message:
         return None
 
-    user_message = user_message.strip()
-
-    if not user_message:
-        return None
-
     if not GEMINI_API_KEY:
-        return "کلیدم تنظیم نشده 😐"
+        return "کلید Gemini تنظیم نشده 😐"
 
-    # تأخیر طبیعی کوتاه
     await asyncio.sleep(
-        random.uniform(0.8, 2.0)
+        random.uniform(0.8, 1.8)
     )
-
-    memory_key = f"group_{chat_id}"
 
     history = _memory.get(
-        memory_key,
-        []
-    )
-
-    # پیام جدید
-    history.append(
-        f"کاربر: {user_message}"
-    )
-
-    # فقط چند پیام اخیر
-    history = history[-10:]
-
-    previous_replies = _recent_replies.get(
         chat_id,
         []
     )
 
-    recent_text = "\n".join(
-        f"- {x}"
-        for x in previous_replies[-8:]
+    history.append(
+        f"کاربر: {user_message}"
+    )
+
+    history = history[-10:]
+
+    recent = _recent_replies.get(
+        chat_id,
+        []
     )
 
     prompt = f"""
@@ -266,20 +196,18 @@ async def get_group_reply(
 گفت‌وگوی اخیر:
 {chr(10).join(history)}
 
-چند جواب اخیر ملورینا:
-{recent_text if recent_text else "هنوز جوابی داده نشده"}
-
-مهم:
-جواب جدید نباید عیناً یکی از جواب‌های اخیر باشد.
+جواب‌های اخیر ملورینا:
+{chr(10).join(recent[-8:])}
 
 پیام جدید:
 {user_message}
 
+یک جواب کوتاه و متفاوت بده.
+
 ملورینا:
 """
 
-    # چند تلاش برای جلوگیری از جواب تکراری
-    for _ in range(3):
+    for attempt in range(3):
 
         try:
 
@@ -292,13 +220,14 @@ async def get_group_reply(
                 chat_id,
                 reply
             ):
-                prompt += (
-                    "\nاین جواب تکراری است. "
-                    "یک جواب کاملاً متفاوت و کوتاه بساز."
-                )
+
+                prompt += """
+جواب قبلی تکراری بود.
+یک جواب کاملاً متفاوت و طبیعی بنویس.
+"""
+
                 continue
 
-            # ذخیره حافظه
             history.append(
                 f"ملورینا: {reply}"
             )
@@ -316,26 +245,53 @@ async def get_group_reply(
 
             error = str(e)
 
+            print(
+                f"Gemini error: {error}"
+            )
+
+            # خطای کلید
             if "401" in error or "403" in error:
 
                 return (
-                    "کلید Gemini مشکل داره 😐"
+                    "کلید Gemini معتبر نیست 😐"
                 )
 
+            # مدل
             if "404" in error:
 
                 return (
                     f"مدل {GEMINI_MODEL} پیدا نشد 😐"
                 )
 
+            # محدودیت
             if "429" in error:
 
                 return (
-                    "یکم زیادی حرف زدیم 😂"
+                    "یکم صبر کن، زیادی حرف زدیم 😂"
                 )
+
+            # خطای درخواست
+            if "400" in error:
+
+                return (
+                    "درخواست Gemini مشکل داشت 😐"
+                )
+
+            # تلاش مجدد
+            if attempt < 2:
+
+                await asyncio.sleep(1)
+
+                continue
+
+            # این بار خطای واقعی را در Railway چاپ می‌کنیم
+            print(
+                "FINAL GEMINI ERROR:",
+                error
+            )
 
             return (
                 "یه مشکلی پیش اومد، دوباره بگو 😐"
             )
 
-    return "الان چیزی به ذهنم نمی‌رسه 😶"
+    return "یه چیزی بگو، گوشم با توئه 😌"
