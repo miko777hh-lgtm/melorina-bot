@@ -14,14 +14,18 @@ def get_env(key, default=""):
 
 
 BOT_TOKEN = get_env("BOT_TOKEN")
-GEMINI_API_KEY = get_env("GEMINI_API_KEY")
+
+ADMIN_ID_RAW = get_env("ADMIN_ID", "0")
 
 try:
-    ADMIN_ID = int(get_env("ADMIN_ID", "0"))
+    ADMIN_ID = int(ADMIN_ID_RAW)
 except ValueError:
     ADMIN_ID = 0
+
+
+GEMINI_API_KEY = get_env("GEMINI_API_KEY")
 
 GEMINI_MODEL = get_env(
     "GEMINI_MODEL",
     "gemini-3.6-flash"
-    )
+)
