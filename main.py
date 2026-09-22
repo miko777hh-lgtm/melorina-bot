@@ -10,6 +10,7 @@ from telegram.ext import (
 )
 
 from config import BOT_TOKEN
+from replies import get_ready_reply
 from gemini_chat import get_group_reply
 
 
@@ -20,10 +21,12 @@ logging.basicConfig(
         "%(levelname)s - "
         "%(message)s"
     ),
-    level=logging.INFO
+    level=logging.INFO,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(
+    __name__
+)
 
 
 async def start(
@@ -34,16 +37,7 @@ async def start(
     if not update.message:
         return
 
-    user = update.effective_user
-
-    name = (
-        user.first_name
-        if user and user.first_name
-        else "دوست"
-    )
-
     await update.message.reply_text(
-        f"سلام {name}!\n"
         "ملورینا اینجاست 😌"
     )
 
@@ -61,11 +55,11 @@ async def message_handler(
     # فقط گروه
     if message.chat.type not in (
         "group",
-        "supergroup"
+        "supergroup",
     ):
         return
 
-    # پیام‌های خود ربات نادیده گرفته شوند
+    # پیام خودش را نادیده بگیر
     if (
         message.from_user
         and message.from_user.id
@@ -83,6 +77,28 @@ async def message_handler(
         return
 
     try:
+
+        # =====================================
+        # مرحله اول:
+        # جواب آماده - فوری
+        # =====================================
+
+        ready_reply = get_ready_reply(
+            text
+        )
+
+        if ready_reply:
+
+            await message.reply_text(
+                ready_reply
+            )
+
+            return
+
+        # =====================================
+        # مرحله دوم:
+        # Gemini
+        # =====================================
 
         await message.chat.send_action(
             action="typing"
@@ -102,7 +118,7 @@ async def message_handler(
     except Exception as e:
 
         logger.exception(
-            "Group message error: %s",
+            "MESSAGE ERROR: %s",
             e
         )
 
@@ -132,13 +148,14 @@ def main():
 
     application.add_handler(
         MessageHandler(
-            filters.ALL & ~filters.COMMAND,
+            filters.ALL
+            & ~filters.COMMAND,
             message_handler
         )
     )
 
     print(
-        "🚀 Melorina روشن شد..."
+        "🚀 MELORINA روشن شد..."
     )
 
     application.run_polling(
