@@ -1169,207 +1169,108 @@ REPLIES = {
 }
 
 
-def normalize(text: str) -> str:
+def normalize(text):
     text = text.lower().strip()
-
     replacements = {
-        "ي": "ی",
-        "ى": "ی",
-        "ك": "ک",
-        "ۀ": "ه",
-        "ة": "ه",
-        "ؤ": "و",
-        "إ": "ا",
-        "أ": "ا",
-        "ٱ": "ا",
+        "ي": "ی", "ى": "ی", "ك": "ک", "ۀ": "ه", "ة": "ه",
+        "ؤ": "و", "إ": "ا", "أ": "ا", "ٱ": "ا",
     }
-
     for old, new in replacements.items():
         text = text.replace(old, new)
-
     text = re.sub(r"[\u064B-\u065F\u0670]", "", text)
     text = re.sub(r"\s+", " ", text)
-
     return text.strip()
 
 
-def collapse_letters(text: str) -> str:
-    """
-    تبدیل:
-    مممممنونننننن -> ممنون
-    عالیهههه -> عالیه
-    واااای -> وای
-    """
-
+def collapse_letters(text):
     return re.sub(r"(.)\1{2,}", r"\1", text)
 
 
-def clean_for_match(text: str) -> str:
+def clean_for_match(text):
     text = normalize(text)
     text = re.sub(r"[؟?!،,؛;:.…_\-ـ]+", " ", text)
     text = collapse_letters(text)
     text = re.sub(r"\s+", " ", text)
-
     return text.strip()
 
 
-def pick_reply(chat_id: int, category: str) -> str:
+def pick_reply(chat_id, category):
     choices = REPLIES.get(category, [])
-
     if not choices:
         return ""
-
     recent = RECENT[chat_id]
-
-    available = [
-        reply for reply in choices
-        if reply not in recent
-    ]
-
+    available = [reply for reply in choices if reply not in recent]
     if not available:
         available = choices
-
     answer = random.choice(available)
-
     recent.append(answer)
-
     return answer
 
 
-def get_ready_reply(chat_id: int, text: str) -> str | None:
+def get_ready_reply(chat_id, text):
     original = normalize(text)
-
     if not original:
         return None
 
     t = clean_for_match(original)
 
-    # اسم / صدا زدن ملورینا
     if re.fullmatch(r"(ملو|ملورینا|ملو جان|ملورینا جان)", t):
         return pick_reply(chat_id, "name")
 
-    # ملو کجایی؟
     if any(x in t for x in (
-        "ملو کجایی",
-        "ملورینا کجایی",
-        "ملو کجاست",
-        "ملورینا کجاست",
-        "ملو کوشی",
+        "ملو کجایی", "ملورینا کجایی", "ملو کجاست",
+        "ملورینا کجاست", "ملو کوشی",
     )):
         return pick_reply(chat_id, "where")
 
-    # اسم چیه؟
-    if any(x in t for x in (
-        "اسمت چیه",
-        "اسم چیه",
-        "اسم تو چیه",
-    )):
+    if any(x in t for x in ("اسمت چیه", "اسم چیه", "اسم تو چیه")):
         return pick_reply(chat_id, "name")
 
-    # سلام
     if re.fullmatch(r"(سلام|درود|هی|های|هلو|سلا+م)", t):
         return pick_reply(chat_id, "salam")
 
-    # صبح بخیر
-    if t in {
-        "صبح بخیر",
-        "صبحت بخیر",
-        "صبح بخیر ملو",
-        "صبح بخیر ملورینا",
-    }:
+    if t in {"صبح بخیر", "صبحت بخیر", "صبح بخیر ملو", "صبح بخیر ملورینا"}:
         return pick_reply(chat_id, "morning")
 
-    # شب بخیر
-    if t in {
-        "شب بخیر",
-        "شبت بخیر",
-        "شب خوش",
-        "خوب بخوابی",
-    }:
+    if t in {"شب بخیر", "شبت بخیر", "شب خوش", "خوب بخوابی"}:
         return pick_reply(chat_id, "night")
 
-    # خوبی؟
-    if re.fullmatch(
-        r"(خوبی|چطوری|حالت چطوره|چه خبر|خوبی ملو|ملو خوبی)",
-        t
-    ):
+    if re.fullmatch(r"(خوبی|چطوری|حالت چطوره|چه خبر|خوبی ملو|ملو خوبی)", t):
         return pick_reply(chat_id, "khubi")
 
-    # خسته‌ام
-    if any(x in t for x in (
-        "خسته ام",
-        "خستم",
-        "خیلی خسته ام",
-        "خسته‌ام",
-    )):
+    if any(x in t for x in ("خسته ام", "خستم", "خیلی خسته ام", "خسته‌ام")):
         return pick_reply(chat_id, "tired")
 
-    # دلم گرفته
     if any(x in t for x in (
-        "دلم گرفته",
-        "غمگینم",
-        "ناراحتم",
-        "حالم بده",
-        "حالم خوب نیست",
+        "دلم گرفته", "غمگینم", "ناراحتم", "حالم بده", "حالم خوب نیست",
     )):
         return pick_reply(chat_id, "sad")
 
-    # عاشقتم / دوستت دارم
-    if any(x in t for x in (
-        "عاشقتم",
-        "دوستت دارم",
-    )):
+    if any(x in t for x in ("عاشقتم", "دوستت دارم")):
         return pick_reply(chat_id, "love")
 
-    # چی میگی؟
-    if any(x in t for x in (
-        "چی میگی",
-        "چه میگی",
-        "چی داری میگی",
-    )):
+    if any(x in t for x in ("چی میگی", "چه میگی", "چی داری میگی")):
         return pick_reply(chat_id, "what")
 
-    # چخبر
-    if t in {
-        "چخبر",
-        "چه خبر",
-        "خبری",
-    }:
+    if t in {"چخبر", "چه خبر", "خبری"}:
         return pick_reply(chat_id, "news")
 
-    # کجایی؟
     if "کجایی" in t:
         return pick_reply(chat_id, "where")
 
-    # کمک
-    if t in {
-        "کمک",
-        "کمکم کن",
-        "یه کمک",
-        "کمک میخوام",
-        "کمک می‌خوام",
-    }:
+    if t in {"کمک", "کمکم کن", "یه کمک", "کمک میخوام", "کمک می‌خوام"}:
         return pick_reply(chat_id, "help")
 
-    # ممنون با کش دادن حروف
     if (
         re.fullmatch(r"م+ن+و+ن+", t)
         or re.fullmatch(r"م+م+ن+و+ن+", t)
         or t in {
-            "مرسی",
-            "ممنون",
-            "ممنونم",
-            "متشکرم",
-            "تشکر",
-            "سپاس",
-            "سپاسگزارم",
-            "دمت گرم",
-            "دستت درد نکنه",
+            "مرسی", "ممنون", "ممنونم", "متشکرم", "تشکر",
+            "سپاس", "سپاسگزارم", "دمت گرم", "دستت درد نکنه",
         }
     ):
         return pick_reply(chat_id, "merci")
 
-    # 😂 / خخخخ / ههههه
     if (
         re.search(r"خ{2,}", t)
         or re.search(r"ه{2,}", t)
@@ -1377,181 +1278,80 @@ def get_ready_reply(chat_id: int, text: str) -> str | None:
     ):
         return pick_reply(chat_id, "laugh")
 
-    # 😭
-    if (
-        any(e in original for e in ("😭", "😢"))
-        or "گریه" in t
-    ):
+    if any(e in original for e in ("😭", "😢")) or "گریه" in t:
         return pick_reply(chat_id, "cry")
 
-    # واای
-    if any(x in t for x in (
-        "واای",
-        "وااای",
-        "وای",
-        "واو",
-    )):
+    if any(x in t for x in ("واای", "وااای", "وای", "واو")):
         return pick_reply(chat_id, "wow")
 
-    # عه
     if re.fullmatch(r"عه+", t):
         return pick_reply(chat_id, "eh")
 
-    # جدی؟
-    if (
-        ("جدی" in t or "واقعا" in t or "واقعاً" in t)
-        and len(t) <= 25
-    ):
+    if ("جدی" in t or "واقعا" in t or "واقعاً" in t) and len(t) <= 25:
         return pick_reply(chat_id, "serious")
 
-    # چرا؟
     if re.fullmatch(r"چرا+", t):
         return pick_reply(chat_id, "why")
 
-    # کی؟
     if re.fullmatch(r"کی+", t):
         return pick_reply(chat_id, "who")
 
-    # بیا
-    if t in {
-        "بیا",
-        "بیا ملو",
-        "ملو بیا",
-        "بیا اینجا",
-    }:
+    if t in {"بیا", "بیا ملو", "ملو بیا", "بیا اینجا"}:
         return pick_reply(chat_id, "come")
 
-    # ساکت باش
-    if any(x in t for x in (
-        "ساکت باش",
-        "خفه شو",
-        "ساکت شو",
-    )):
+    if any(x in t for x in ("ساکت باش", "خفه شو", "ساکت شو")):
         return pick_reply(chat_id, "shut")
 
-    # آره
     if t in {
-        "آره",
-        "اره",
-        "بله",
-        "اوکی",
-        "باشه",
-        "حتما",
-        "حتماً",
-        "قبوله",
-        "قبول",
+        "آره", "اره", "بله", "اوکی", "باشه",
+        "حتما", "حتماً", "قبوله", "قبول",
     }:
         return pick_reply(chat_id, "yes")
 
-    # نه
-    if t in {
-        "نه",
-        "خیر",
-        "نخیر",
-        "نه ممنون",
-    }:
+    if t in {"نه", "خیر", "نخیر", "نه ممنون"}:
         return pick_reply(chat_id, "no")
 
-    # جوک
-    if t in {
-        "جوک",
-        "یه جوک",
-        "یک جوک",
-        "شوخی",
-        "یه شوخی",
-    }:
+    if t in {"جوک", "یه جوک", "یک جوک", "شوخی", "یه شوخی"}:
         return pick_reply(chat_id, "joke")
 
-    # ربات؟
-    if any(x in t for x in (
-        "تو رباتی",
-        "رباتی",
-        "ربات هستی",
-        "تو چی هستی",
-    )):
-        return pick_reply(chat_id, "robot")
+    if any(x in t for x in ("تو رباتی", "رباتی", "ربات هستی", "تو چی هستی")):
+        return pick_reply(chat_id, "idiot_bot")
 
-    # کانال بهترینه
     if any(x in t for x in (
-        "کانال شما بهترینه",
-        "کانالتون بهترینه",
-        "کانال بهترینه",
-        "بهترین کانال",
+        "کانال شما بهترینه", "کانالتون بهترینه",
+        "کانال بهترینه", "بهترین کانال",
     )):
         return pick_reply(chat_id, "channel")
 
-    # آخجون
     if "آخجون" in t or t == "اخجون":
         return pick_reply(chat_id, "yay")
 
-    # بهترین کتاب
-    if (
-        "بهترین کتاب" in t
-        or "کتاب بهترینه" in t
-    ):
+    if "بهترین کتاب" in t or "کتاب بهترینه" in t:
         return pick_reply(chat_id, "book")
 
-    # انگلیسی صحبت کن
     if any(x in t for x in (
-        "انگلیسی صحبت کن",
-        "انگلیسی حرف بزن",
-        "انگلیسی بگو",
+        "انگلیسی صحبت کن", "انگلیسی حرف بزن", "انگلیسی بگو",
     )):
         return pick_reply(chat_id, "english")
 
-    # کیوت
     if any(x in t for x in (
-        "ملورینا کیوت",
-        "ملو کیوته",
-        "ملورینا کیوته",
-        "کیوتی",
+        "ملورینا کیوت", "ملو کیوته", "ملورینا کیوته", "کیوتی",
     )):
         return pick_reply(chat_id, "cute")
 
-    # عالی
-    if any(x in t for x in (
-        "عالیه",
-        "عالی",
-        "عالیهههه",
-        "خیلی عالی",
-    )):
+    if any(x in t for x in ("عالیه", "عالی", "عالیهههه", "خیلی عالی")):
         return pick_reply(chat_id, "great")
 
-    # توهین
-    if any(x in t for x in (
-        "حرومزاده",
-        "حروم زاده",
-        "بی شعور",
-        "بی‌شعور",
-    )):
+    if any(x in t for x in ("حرومزاده", "حروم زاده", "بی شعور", "بی‌شعور")):
         return pick_reply(chat_id, "insult")
 
-    # ربات خر
-    if any(x in t for x in (
-        "ربات خر",
-        "ربات خری",
-        "خر ربات",
-    )):
+    if any(x in t for x in ("ربات خر", "ربات خری", "خر ربات")):
         return pick_reply(chat_id, "idiot_bot")
 
-    # احمق / کودن
-    if (
-        "احمق" in t
-        or "کودن" in t
-    ):
+    if "احمق" in t or "کودن" in t:
         return pick_reply(chat_id, "insult")
 
-    # بهترینه
     if "بهترینه" in t:
         return pick_reply(chat_id, "wow_best")
 
-    # هیچ پاسخ آماده‌ای پیدا نشد
     return None
-
-
-# اطمینان از اینکه هر دسته دقیقاً 30 پاسخ دارد
-for name, items in REPLIES.items():
-    if len(items) != 30:
-        raise RuntimeError(
-            f"دسته {name} باید دقیقاً 30 پاسخ داشته باشد."
-)
