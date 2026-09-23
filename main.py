@@ -28,6 +28,40 @@ logger = logging.getLogger(__name__)
 TZ = ZoneInfo(TIMEZONE)
 
 
+# پنل زمان‌بندی
+def schedule_panel_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 پست متنی", callback_data="sch_text")],
+        [InlineKeyboardButton("🖼 پست عکس", callback_data="sch_photo")],
+        [InlineKeyboardButton("🎬 پست ویدیو", callback_data="sch_video")],
+        [InlineKeyboardButton("📄 پست فایل", callback_data="sch_document")],
+        [InlineKeyboardButton("🎵 پست صوتی", callback_data="sch_audio")],
+        [InlineKeyboardButton("🎞 گیف", callback_data="sch_animation")],
+        [InlineKeyboardButton("🎙 ویس", callback_data="sch_voice")],
+        [InlineKeyboardButton("📋 لیست پست‌ها", callback_data="sch_list")],
+        [InlineKeyboardButton("🗑 حذف پست", callback_data="sch_delete")],
+        [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_back")],
+    ])
+
+
+def parse_datetime(text):
+    try:
+        parts = text.strip().split()
+        date_part = parts[0]
+        time_part = parts[1] if len(parts) > 1 else "00:00"
+        y, m, d = map(int, date_part.split("-"))
+        hh, mm = map(int, time_part.split(":"))
+        if y < 1500:
+            from jalali import jalali_to_gregorian
+            gy, gm, gd = jalali_to_gregorian(y, m, d)
+            dt = datetime(gy, gm, gd, hh, mm, tzinfo=TZ)
+        else:
+            dt = datetime(y, m, d, hh, mm, tzinfo=TZ)
+        return dt.isoformat()
+    except Exception:
+        return None
+
+
 # ═══════════ استارت ═══════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -56,7 +90,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
-    # ─── کاربر ───
     if data == "check_join":
         await check_join_callback(update, context)
         return
@@ -67,7 +100,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"📩 تماس با پشتیبانی\n\n{support_text}")
         return
 
-    # ─── فقط ادمین ───
     if not is_admin(user_id):
         return
 
@@ -90,7 +122,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=admin_keyboard())
         return
 
-    # ═══════════ تنظیمات ═══════════
     if data == "admin_settings":
         ar = await db.get_setting("auto_reply_enabled", "1")
         ap = await db.get_setting("auto_post_enabled", "1")
@@ -111,13 +142,33 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "toggle_auto_reply":
         cur = await db.get_setting("auto_reply_enabled", "1")
         await db.set_setting("auto_reply_enabled", "0" if cur == "1" else "1")
-        await callback_handler(update, context)
+        ar = await db.get_setting("auto_reply_enabled", "1")
+        ap = await db.get_setting("auto_post_enabled", "1")
+        ar_t = "✅ فعال" if ar == "1" else "❌ غیرفعال"
+        ap_t = "✅ فعال" if ap == "1" else "❌ غیرفعال"
+        kb = [
+            [InlineKeyboardButton(f"💬 جواب خودکار گروه: {ar_t}", callback_data="toggle_auto_reply")],
+            [InlineKeyboardButton(f"📮 پست خودکار کانال: {ap_t}", callback_data="toggle_auto_post")],
+            [InlineKeyboardButton("✏️ کانال پیش‌فرض", callback_data="set_default_channel")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_back")],
+        ]
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if data == "toggle_auto_post":
         cur = await db.get_setting("auto_post_enabled", "1")
         await db.set_setting("auto_post_enabled", "0" if cur == "1" else "1")
-        await callback_handler(update, context)
+        ar = await db.get_setting("auto_reply_enabled", "1")
+        ap = await db.get_setting("auto_post_enabled", "1")
+        ar_t = "✅ فعال" if ar == "1" else "❌ غیرفعال"
+        ap_t = "✅ فعال" if ap == "1" else "❌ غیرفعال"
+        kb = [
+            [InlineKeyboardButton(f"💬 جواب خودکار گروه: {ar_t}", callback_data="toggle_auto_reply")],
+            [InlineKeyboardButton(f"📮 پست خودکار کانال: {ap_t}", callback_data="toggle_auto_post")],
+            [InlineKeyboardButton("✏️ کانال پیش‌فرض", callback_data="set_default_channel")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_back")],
+        ]
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if data == "set_default_channel":
@@ -125,7 +176,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("آیدی کانال پیش‌فرض رو بفرست:")
         return
 
-    # ═══════════ فایل ═══════════
     if data == "admin_add_file":
         await db.set_fsm(user_id, "awaiting_file")
         await query.edit_message_text("📎 فایل رو با کپشن بفرست:")
@@ -181,7 +231,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=admin_keyboard())
         return
 
-    # ═══════════ کانال ═══════════
     if data == "admin_add_channel":
         await db.set_fsm(user_id, "awaiting_channel")
         await query.edit_message_text("📢 آیدی کانال رو بفرست (مثال: @mychannel):")
@@ -212,7 +261,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=admin_keyboard())
         return
 
-    # ═══════════ بنر ═══════════
     if data == "admin_set_banner":
         await db.set_fsm(user_id, "awaiting_banner")
         await query.edit_message_text("🖼 بنر رو بفرست (عکس/ویدیو/فایل + کپشن):")
@@ -226,28 +274,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ═══════════ زمان‌بندی ═══════════
     if data == "admin_schedule":
         await query.edit_message_text(
             "⏰ نوع پست:",
             reply_markup=schedule_panel_keyboard()
         )
-        return
-
-    if data.startswith("sch_"):
-        ptype = data.replace("sch_", "")
-        default_ch = await db.get_setting("default_channel", "")
-        await db.set_fsm(user_id, "ap_step1", {"ptype": ptype, "default_ch": default_ch})
-        if default_ch:
-            await query.edit_message_text(
-                f"✅ نوع: {ptype}\n\n"
-                f"📢 کانال پیش‌فرض: `{default_ch}`\n\n"
-                f"اگه می‌خوای همین باشه، بنویس: `ok`"
-            )
-        else:
-            await query.edit_message_text(
-                f"✅ نوع: {ptype}\n\n🏠 آیدی کانال مقصد:"
-            )
         return
 
     if data == "sch_list":
@@ -279,39 +310,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.", reply_markup=schedule_panel_keyboard())
         return
 
-
-# پنل زمان‌بندی
-def schedule_panel_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 پست متنی", callback_data="sch_text")],
-        [InlineKeyboardButton("🖼 پست عکس", callback_data="sch_photo")],
-        [InlineKeyboardButton("🎬 پست ویدیو", callback_data="sch_video")],
-        [InlineKeyboardButton("📄 پست فایل", callback_data="sch_document")],
-        [InlineKeyboardButton("🎵 پست صوتی", callback_data="sch_audio")],
-        [InlineKeyboardButton("🎞 گیف", callback_data="sch_animation")],
-        [InlineKeyboardButton("🎙 ویس", callback_data="sch_voice")],
-        [InlineKeyboardButton("📋 لیست پست‌ها", callback_data="sch_list")],
-        [InlineKeyboardButton("🗑 حذف پست", callback_data="sch_delete")],
-        [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_back")],
-    ])
-
-
-def parse_datetime(text):
-    try:
-        parts = text.strip().split()
-        date_part = parts[0]
-        time_part = parts[1] if len(parts) > 1 else "00:00"
-        y, m, d = map(int, date_part.split("-"))
-        hh, mm = map(int, time_part.split(":"))
-        if y < 1500:
-            from jalali import jalali_to_gregorian
-            gy, gm, gd = jalali_to_gregorian(y, m, d)
-            dt = datetime(gy, gm, gd, hh, mm, tzinfo=TZ)
+    if data.startswith("sch_"):
+        ptype = data.replace("sch_", "")
+        default_ch = await db.get_setting("default_channel", "")
+        await db.set_fsm(user_id, "ap_step1", {"ptype": ptype, "default_ch": default_ch})
+        if default_ch:
+            await query.edit_message_text(
+                f"✅ نوع: {ptype}\n\n"
+                f"📢 کانال پیش‌فرض: `{default_ch}`\n\n"
+                f"اگه می‌خوای همین باشه، بنویس: `ok`"
+            )
         else:
-            dt = datetime(y, m, d, hh, mm, tzinfo=TZ)
-        return dt.isoformat()
-    except Exception:
-        return None
+            await query.edit_message_text(
+                f"✅ نوع: {ptype}\n\n🏠 آیدی کانال مقصد:"
+            )
+        return
 
 
 # ═══════════ هندلر پیام ═══════════
@@ -407,7 +420,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.clear_fsm(user.id)
             return
 
-        # ─── زمان‌بندی ───
         if state == "ap_step1":
             txt = (msg.text or "").strip()
             if txt.lower() == "ok" and data.get("default_ch"):
@@ -476,7 +488,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.clear_fsm(user.id)
         return
 
-    # ═══════════ فایل معمولی کاربر ═══════════
+    # ═══════════ فایل معمولی ═══════════
     if msg.photo or msg.video or msg.document or msg.audio or msg.voice or msg.animation:
         await msg.reply_text(FILE_SENT)
         await send_banner(context, msg.chat_id)
@@ -485,23 +497,19 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text(FILE_NOT_FOUND)
 
 
-# ═══════════ Post Init ═══════════
-async def post_init(app):
-    asyncio.create_task(process_scheduled(app))
-    asyncio.create_task(backup_loop(app))
-
-
 # ═══════════ اجرا ═══════════
 def main():
     if not BOT_TOKEN:
         print("❌ BOT_TOKEN نیست!")
         return
 
+    # ساخت دیتابیس
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(db.init_db())
     loop.close()
 
+    # ساخت اپ
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
