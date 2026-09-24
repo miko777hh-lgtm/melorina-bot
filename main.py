@@ -35,7 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
 
-    # ─── لینک یکبار مصرف ───
+    # لینک یکبار مصرف
     if args and args[0].startswith("otl_"):
         code = args[0][4:]
         result = await use_onetime_link(code)
@@ -58,7 +58,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_banner(context, user.id)
         return
 
-    # ─── استارت معمولی ───
+    # استارت معمولی
     if is_admin(user.id):
         await show_admin_panel(update, context)
         return
@@ -441,7 +441,7 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, message_handler))
 
-    print("🚀 ربات روشن شد...")
+    print("🚀 ربات روشن شد!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
