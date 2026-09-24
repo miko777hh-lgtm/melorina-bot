@@ -16,11 +16,38 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                caption TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id TEXT UNIQUE NOT NULL,
                 title TEXT,
                 invite_link TEXT
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS banner (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                file_id TEXT,
+                file_type TEXT,
+                caption TEXT
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS onetime_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                file_id_db INTEGER NOT NULL,
+                used INTEGER DEFAULT 0,
+                expires_at TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
         await db.execute("""
@@ -43,10 +70,59 @@ async def add_user(user_id, username, first_name):
         await db.commit()
 
 
+async def get_all_users():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id FROM users") as cur:
+            return [r[0] for r in await cur.fetchall()]
+
+
 async def get_users_count():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT COUNT(*) FROM users") as cur:
             return (await cur.fetchone())[0]
+
+
+# ═══════════ فایل‌ها ═══════════
+async def add_file(file_id, file_type, caption):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO files (file_id, file_type, caption) VALUES (?, ?, ?)",
+            (file_id, file_type, caption)
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_all_files():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, file_id, file_type, caption FROM files ORDER BY id DESC"
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def get_file(file_id_db):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT file_id, file_type, caption FROM files WHERE id = ?",
+            (file_id_db,)
+        ) as cur:
+            return await cur.fetchone()
+
+
+async def update_caption(file_id_db, new_caption):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE files SET caption = ? WHERE id = ?",
+            (new_caption, file_id_db)
+        )
+        await db.commit()
+
+
+async def delete_file(file_id_db):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM files WHERE id = ?", (file_id_db,))
+        await db.commit()
 
 
 # ═══════════ کانال‌ها ═══════════
@@ -70,6 +146,64 @@ async def get_all_channels():
 async def delete_channel(channel_id):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM channels WHERE id = ?", (channel_id,))
+        await db.commit()
+
+
+# ═══════════ بنر ═══════════
+async def set_banner(file_id, file_type, caption):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO banner (id, file_id, file_type, caption) VALUES (1, ?, ?, ?)",
+            (file_id, file_type, caption)
+        )
+        await db.commit()
+
+
+async def get_banner():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT file_id, file_type, caption FROM banner WHERE id = 1"
+        ) as cur:
+            return await cur.fetchone()
+
+
+# ═══════════ لینک یکبار مصرف ═══════════
+async def add_onetime_link(code, file_id_db, expires_at):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO onetime_links (code, file_id_db, expires_at) VALUES (?, ?, ?)",
+            (code, file_id_db, expires_at)
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_onetime_link(code):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, file_id_db, used, expires_at FROM onetime_links WHERE code = ?",
+            (code,)
+        ) as cur:
+            return await cur.fetchone()
+
+
+async def mark_onetime_used(code):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE onetime_links SET used = 1 WHERE code = ?", (code,))
+        await db.commit()
+
+
+async def get_all_onetime_links():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, code, file_id_db, used, expires_at, created_at FROM onetime_links ORDER BY id DESC"
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def delete_onetime_link(link_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM onetime_links WHERE id = ?", (link_id,))
         await db.commit()
 
 
