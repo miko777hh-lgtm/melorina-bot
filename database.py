@@ -35,9 +35,7 @@ async def init_db():
         await db.execute("""
             CREATE TABLE IF NOT EXISTS banner (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
-                file_id TEXT,
-                file_type TEXT,
-                caption TEXT
+                message_json TEXT
             )
         """)
         await db.execute("""
@@ -51,12 +49,46 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS fsm_state (
                 user_id INTEGER PRIMARY KEY,
                 state TEXT,
                 data TEXT DEFAULT '{}'
             )
         """)
+        await db.commit()
+
+        # پیش‌فرض‌ها
+        defaults = {
+            "support_text": "حرفت رو بزن، مستقیم میرسه به ادمین 👇",
+        }
+        for k, v in defaults.items():
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                (k, v)
+            )
+        await db.commit()
+
+
+# ═══════════ تنظیمات ═══════════
+async def get_setting(key, default=None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else default
+
+
+async def set_setting(key, value):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, str(value))
+        )
         await db.commit()
 
 
@@ -150,11 +182,12 @@ async def delete_channel(channel_id):
 
 
 # ═══════════ بنر ═══════════
-async def set_banner(file_id, file_type, caption):
+async def set_banner(message_json):
+    """ذخیره کل پیام به صورت JSON — پشتیبانی از همه نوع پیام"""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT OR REPLACE INTO banner (id, file_id, file_type, caption) VALUES (1, ?, ?, ?)",
-            (file_id, file_type, caption)
+            "INSERT OR REPLACE INTO banner (id, message_json) VALUES (1, ?)",
+            (message_json,)
         )
         await db.commit()
 
@@ -162,9 +195,10 @@ async def set_banner(file_id, file_type, caption):
 async def get_banner():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT file_id, file_type, caption FROM banner WHERE id = 1"
+            "SELECT message_json FROM banner WHERE id = 1"
         ) as cur:
-            return await cur.fetchone()
+            row = await cur.fetchone()
+            return row[0] if row else None
 
 
 # ═══════════ لینک یکبار مصرف ═══════════
