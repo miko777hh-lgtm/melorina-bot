@@ -1,6 +1,8 @@
 import aiosqlite
 import json
-from config import DB_PATH
+import os
+
+DB_PATH = os.environ.get("DB_PATH", "zara_bot.sqlite3")
 
 
 async def init_db():
@@ -14,46 +16,11 @@ async def init_db():
             )
         """)
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS files (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_id TEXT NOT NULL,
-                file_type TEXT NOT NULL,
-                caption TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        await db.execute("""
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id TEXT UNIQUE NOT NULL,
                 title TEXT,
                 invite_link TEXT
-            )
-        """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS banner (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                file_id TEXT,
-                file_type TEXT,
-                caption TEXT
-            )
-        """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS scheduled (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT NOT NULL,
-                file_id TEXT,
-                file_type TEXT,
-                caption TEXT,
-                run_at TEXT NOT NULL,
-                sent INTEGER DEFAULT 0,
-                retries INTEGER DEFAULT 0
-            )
-        """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
             )
         """)
         await db.execute("""
@@ -63,37 +30,6 @@ async def init_db():
                 data TEXT DEFAULT '{}'
             )
         """)
-        await db.commit()
-
-        defaults = {
-            "auto_reply_enabled": "1",
-            "auto_post_enabled": "1",
-            "default_channel": "",
-            "support_text": "پیامت مستقیم میره به ادمین.\nحرفت رو بزن 👇",
-            "donate_text": "اگه دوست داشتی، می‌تونی حمایت کنی.\nاجباری نیست.",
-        }
-        for k, v in defaults.items():
-            await db.execute(
-                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-                (k, v)
-            )
-        await db.commit()
-
-
-# ═══════════ تنظیمات ═══════════
-async def get_setting(key, default=None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else default
-
-
-async def set_setting(key, value):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            (key, str(value))
-        )
         await db.commit()
 
 
@@ -107,59 +43,10 @@ async def add_user(user_id, username, first_name):
         await db.commit()
 
 
-async def get_all_users():
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT user_id FROM users") as cur:
-            return [r[0] for r in await cur.fetchall()]
-
-
 async def get_users_count():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT COUNT(*) FROM users") as cur:
             return (await cur.fetchone())[0]
-
-
-# ═══════════ فایل‌ها ═══════════
-async def add_file(file_id, file_type, caption):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO files (file_id, file_type, caption) VALUES (?, ?, ?)",
-            (file_id, file_type, caption)
-        )
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_all_files():
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT id, file_id, file_type, caption FROM files ORDER BY id DESC"
-        ) as cur:
-            return await cur.fetchall()
-
-
-async def get_file(file_id_db):
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT file_id, file_type, caption FROM files WHERE id = ?",
-            (file_id_db,)
-        ) as cur:
-            return await cur.fetchone()
-
-
-async def update_caption(file_id_db, new_caption):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE files SET caption = ? WHERE id = ?",
-            (new_caption, file_id_db)
-        )
-        await db.commit()
-
-
-async def delete_file(file_id_db):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM files WHERE id = ?", (file_id_db,))
-        await db.commit()
 
 
 # ═══════════ کانال‌ها ═══════════
@@ -183,72 +70,6 @@ async def get_all_channels():
 async def delete_channel(channel_id):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM channels WHERE id = ?", (channel_id,))
-        await db.commit()
-
-
-# ═══════════ بنر ═══════════
-async def set_banner(file_id, file_type, caption):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO banner (id, file_id, file_type, caption) VALUES (1, ?, ?, ?)",
-            (file_id, file_type, caption)
-        )
-        await db.commit()
-
-
-async def get_banner():
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT file_id, file_type, caption FROM banner WHERE id = 1"
-        ) as cur:
-            return await cur.fetchone()
-
-
-# ═══════════ زمان‌بندی ═══════════
-async def add_scheduled(chat_id, file_id, file_type, caption, run_at):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO scheduled (chat_id, file_id, file_type, caption, run_at) VALUES (?, ?, ?, ?, ?)",
-            (str(chat_id), file_id, file_type, caption, run_at)
-        )
-        await db.commit()
-        return cur.lastrowid
-
-
-async def get_pending_scheduled():
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT id, chat_id, file_id, file_type, caption, run_at FROM scheduled WHERE sent = 0 AND retries < 3"
-        ) as cur:
-            return await cur.fetchall()
-
-
-async def get_all_scheduled():
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT id, chat_id, file_id, file_type, caption, run_at, sent FROM scheduled ORDER BY run_at ASC"
-        ) as cur:
-            return await cur.fetchall()
-
-
-async def mark_sent(schedule_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE scheduled SET sent = 1 WHERE id = ?", (schedule_id,))
-        await db.commit()
-
-
-async def increment_retry(schedule_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE scheduled SET retries = retries + 1 WHERE id = ?",
-            (schedule_id,)
-        )
-        await db.commit()
-
-
-async def delete_scheduled(schedule_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM scheduled WHERE id = ?", (schedule_id,))
         await db.commit()
 
 
