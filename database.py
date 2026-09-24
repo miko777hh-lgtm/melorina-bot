@@ -63,9 +63,8 @@ async def init_db():
         """)
         await db.commit()
 
-        # پیش‌فرض‌ها
         defaults = {
-            "support_text": "حرفت رو بزن، مستقیم میرسه به ادمین 👇",
+            "support_text": "این پیام مستقیم میره به ادمین.\nحرفت رو بزن 👇",
         }
         for k, v in defaults.items():
             await db.execute(
@@ -183,7 +182,6 @@ async def delete_channel(channel_id):
 
 # ═══════════ بنر ═══════════
 async def set_banner(message_json):
-    """ذخیره کل پیام به صورت JSON — پشتیبانی از همه نوع پیام"""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT OR REPLACE INTO banner (id, message_json) VALUES (1, ?)",
