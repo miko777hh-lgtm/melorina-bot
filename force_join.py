@@ -1,5 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.error import TelegramError
+from texts import START_BEFORE_JOIN, BTN_JOINED, NOT_JOINED, BTN_CHECK
 import database as db
 
 
@@ -23,12 +24,9 @@ async def send_join_prompt(update, context):
     for ch_id, chat_id, title, invite in channels:
         url = invite if invite else f"https://t.me/{chat_id.lstrip('@')}"
         keyboard.append([InlineKeyboardButton(f"📢 {title}", url=url)])
-    keyboard.append([InlineKeyboardButton("عضو شدم ✓", callback_data="check_join")])
-
+    keyboard.append([InlineKeyboardButton(BTN_JOINED, callback_data="check_join")])
     await update.message.reply_text(
-        "خوش اومدی.\n"
-        "البته هنوز اجازه ورود نداری.\n"
-        "اول عضو کانال‌های زیر شو، بعد برگرد.",
+        START_BEFORE_JOIN,
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -37,17 +35,11 @@ async def check_join_callback(update, context):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-
     if await is_user_joined(context, user_id):
         await query.edit_message_text(
             "بالاخره پیدات شد.\nحالا می‌تونی فایل موردنظرت رو بگیری."
         )
         return True
-
-    keyboard = [[InlineKeyboardButton("بررسی عضویت 🔄", callback_data="check_join")]]
-    await query.edit_message_text(
-        "یکی از درها هنوز بازه.\n"
-        "کانال‌ها رو کامل بررسی کن و دوباره امتحان کن.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    keyboard = [[InlineKeyboardButton(BTN_CHECK, callback_data="check_join")]]
+    await query.edit_message_text(NOT_JOINED, reply_markup=InlineKeyboardMarkup(keyboard))
     return False
