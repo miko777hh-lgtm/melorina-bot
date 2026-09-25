@@ -32,11 +32,26 @@ async def init_db():
                 invite_link TEXT
             )
         """)
-        # ─── بنر پای فایل (جدید) ───
         await db.execute("""
             CREATE TABLE IF NOT EXISTS file_banner (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 message_json TEXT
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS instant_banner (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                message_json TEXT
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS scheduled_banners (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_json TEXT NOT NULL,
+                run_at TEXT NOT NULL,
+                sent INTEGER DEFAULT 0,
+                retries INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
         await db.execute("""
@@ -182,7 +197,7 @@ async def delete_channel(channel_id):
         await db.commit()
 
 
-# ═══════════ بنر پای فایل (جدید) ═══════════
+# ═══════════ بنر پای فایل ═══════════
 async def set_file_banner(message_json):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -201,9 +216,74 @@ async def get_file_banner():
             return row[0] if row else None
 
 
-async def delete_file_banner():
+# ═══════════ بنر فوری ═══════════
+async def set_instant_banner(message_json):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM file_banner WHERE id = 1")
+        await db.execute(
+            "INSERT OR REPLACE INTO instant_banner (id, message_json) VALUES (1, ?)",
+            (message_json,)
+        )
+        await db.commit()
+
+
+async def get_instant_banner():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT message_json FROM instant_banner WHERE id = 1"
+        ) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else None
+
+
+# ═══════════ بنر زمان‌بندی ═══════════
+async def add_scheduled_banner(message_json, run_at):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO scheduled_banners (message_json, run_at) VALUES (?, ?)",
+            (message_json, run_at)
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_pending_banners():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """SELECT id, message_json, run_at 
+               FROM scheduled_banners 
+               WHERE sent = 0 AND retries < 3"""
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def get_all_scheduled_banners():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """SELECT id, message_json, run_at, sent 
+               FROM scheduled_banners 
+               ORDER BY run_at ASC"""
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def mark_banner_sent(bid):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE scheduled_banners SET sent = 1 WHERE id = ?", (bid,))
+        await db.commit()
+
+
+async def increment_banner_retry(bid):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE scheduled_banners SET retries = retries + 1 WHERE id = ?",
+            (bid,)
+        )
+        await db.commit()
+
+
+async def delete_scheduled_banner(bid):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM scheduled_banners WHERE id = ?", (bid,))
         await db.commit()
 
 
