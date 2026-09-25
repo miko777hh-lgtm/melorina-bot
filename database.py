@@ -32,12 +32,11 @@ async def init_db():
                 invite_link TEXT
             )
         """)
+        # ─── بنر پای فایل (جدید) ───
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS banner (
+            CREATE TABLE IF NOT EXISTS file_banner (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
-                file_id TEXT,
-                file_type TEXT,
-                caption TEXT
+                message_json TEXT
             )
         """)
         await db.execute("""
@@ -183,22 +182,29 @@ async def delete_channel(channel_id):
         await db.commit()
 
 
-# ═══════════ بنر ═══════════
-async def set_banner(file_id, file_type, caption):
+# ═══════════ بنر پای فایل (جدید) ═══════════
+async def set_file_banner(message_json):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT OR REPLACE INTO banner (id, file_id, file_type, caption) VALUES (1, ?, ?, ?)",
-            (file_id, file_type, caption)
+            "INSERT OR REPLACE INTO file_banner (id, message_json) VALUES (1, ?)",
+            (message_json,)
         )
         await db.commit()
 
 
-async def get_banner():
+async def get_file_banner():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT file_id, file_type, caption FROM banner WHERE id = 1"
+            "SELECT message_json FROM file_banner WHERE id = 1"
         ) as cur:
-            return await cur.fetchone()
+            row = await cur.fetchone()
+            return row[0] if row else None
+
+
+async def delete_file_banner():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM file_banner WHERE id = 1")
+        await db.commit()
 
 
 # ═══════════ لینک یکبار مصرف ═══════════
@@ -276,12 +282,6 @@ async def get_support_msg(msg_id):
 async def mark_support_seen(msg_id):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE support_msgs SET seen = 1 WHERE id = ?", (msg_id,))
-        await db.commit()
-
-
-async def delete_support_msg(msg_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM support_msgs WHERE id = ?", (msg_id,))
         await db.commit()
 
 
