@@ -1,9 +1,10 @@
+import asyncio
 import json
 import database as db
 
 
 def capture_message(msg):
-    """ذخیره هر نوع پیام به صورت JSON — پشتیبانی از همه چیز"""
+    """ذخیره هر نوع پیام — پشتیبانی از همه چیز"""
     data = {
         "type": "text",
         "text": None,
@@ -62,7 +63,7 @@ def capture_message(msg):
 
 
 async def send_captured(context, chat_id, message_json):
-    """ارسال پیام ذخیره شده — از همه چیز پشتیبانی میکنه"""
+    """ارسال پیام ذخیره شده — پشتیبانی از متن + لینک + نقل قول"""
     try:
         data = json.loads(message_json) if isinstance(message_json, str) else message_json
     except Exception:
@@ -77,7 +78,7 @@ async def send_captured(context, chat_id, message_json):
         if t == "text":
             await context.bot.send_message(
                 chat_id, text,
-                entities=data.get("entities") if data.get("entities") else None,
+                entities=data.get("entities"),
                 disable_web_page_preview=False
             )
         elif t == "photo":
@@ -122,3 +123,34 @@ async def send_file_banner(context, chat_id):
     if not banner:
         return
     await send_captured(context, chat_id, banner)
+
+
+async def broadcast_instant_banner(context):
+    """ارسال بنر فوری به همه کاربران"""
+    banner = await db.get_instant_banner()
+    if not banner:
+        return 0
+    users = await db.get_all_users()
+    count = 0
+    for uid in users:
+        try:
+            await send_captured(context, uid, banner)
+            count += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            continue
+    return count
+
+
+async def broadcast_scheduled_banner(context, message_json):
+    """ارسال بنر زمان‌بندی به همه کاربران"""
+    users = await db.get_all_users()
+    count = 0
+    for uid in users:
+        try:
+            await send_captured(context, uid, message_json)
+            count += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            continue
+    return count
