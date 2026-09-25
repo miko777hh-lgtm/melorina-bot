@@ -3,13 +3,12 @@ from config import ADMIN_ID
 
 
 def admin_reply_keyboard():
-    """کیبورد پایین صفحه — برای ادمین"""
     return ReplyKeyboardMarkup([
         ["➕ افزودن فایل", "✏️ ویرایش کپشن"],
         ["🗑 حذف فایل", "📋 مشاهده فایل‌ها"],
         ["➕ افزودن کانال", "🗑 حذف کانال"],
         ["📋 مشاهده کانال‌ها"],
-        ["🖼 تنظیم بنر", "📢 بنر فوری"],
+        ["🖼 تنظیم بنر پای فایل", "🗑 حذف بنر"],
         ["🔗 لینک یکبار مصرف"],
         ["📩 پنل پیام‌ها"],
         ["📊 آمار ربات"],
@@ -17,7 +16,6 @@ def admin_reply_keyboard():
 
 
 def user_reply_keyboard():
-    """کیبورد پایین صفحه — برای کاربر عادی"""
     return ReplyKeyboardMarkup([
         ["📩 تماس با پشتیبانی"],
     ], resize_keyboard=True)
@@ -32,4 +30,4 @@ async def show_admin_panel(update, context):
         "🎛 پنل ادمین فعال شد\n\n"
         "از کیبورد پایین صفحه استفاده کن 👇",
         reply_markup=admin_reply_keyboard()
-    )
+        )
