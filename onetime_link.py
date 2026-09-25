@@ -27,12 +27,9 @@ async def use_onetime_link(code):
     row = await db.get_onetime_link(code)
     if not row:
         return {"ok": False, "reason": "not_found"}
-
     link_id, file_id_db, used, expires_at = row
-
     if used == 1:
         return {"ok": False, "reason": "used"}
-
     if expires_at:
         try:
             exp = datetime.fromisoformat(expires_at)
@@ -42,7 +39,6 @@ async def use_onetime_link(code):
                 return {"ok": False, "reason": "expired"}
         except Exception:
             pass
-
     await db.mark_onetime_used(code)
     return {"ok": True, "file_id_db": file_id_db}
 
