@@ -26,10 +26,7 @@ async def send_join_prompt(update, context):
         name = title.strip() if title and len(title.strip()) >= 3 else "عضویت"
         keyboard.append([InlineKeyboardButton(f"📢 {name}", url=url)])
     keyboard.append([InlineKeyboardButton(BTN_JOINED, callback_data="check_join")])
-    await update.message.reply_text(
-        START_BEFORE_JOIN,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await update.message.reply_text(START_BEFORE_JOIN, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def check_join_callback(update, context):
