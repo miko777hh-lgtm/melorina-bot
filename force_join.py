@@ -37,7 +37,6 @@ async def check_join_callback(update, context):
     await query.answer()
     user_id = query.from_user.id
     if await is_user_joined(context, user_id):
-        # ← این خط عوض شد: حذف پیام، بدون ارسال متن
         await query.message.delete()
         return True
     keyboard = [[InlineKeyboardButton(BTN_CHECK, callback_data="check_join")]]
