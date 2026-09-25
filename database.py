@@ -51,12 +51,46 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS support_msgs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                username TEXT,
+                first_name TEXT,
+                text TEXT,
+                seen INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS fsm_state (
                 user_id INTEGER PRIMARY KEY,
                 state TEXT,
                 data TEXT DEFAULT '{}'
             )
         """)
+        await db.commit()
+
+
+# ═══════════ تنظیمات ═══════════
+async def get_setting(key, default=None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else default
+
+
+async def set_setting(key, value):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, str(value))
+        )
         await db.commit()
 
 
@@ -205,6 +239,56 @@ async def delete_onetime_link(link_id):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM onetime_links WHERE id = ?", (link_id,))
         await db.commit()
+
+
+# ═══════════ پشتیبانی ═══════════
+async def add_support_msg(user_id, username, first_name, text):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            """INSERT INTO support_msgs 
+               (user_id, username, first_name, text) 
+               VALUES (?, ?, ?, ?)""",
+            (user_id, username, first_name, text)
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_all_support_msgs(limit=50):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """SELECT id, user_id, first_name, text, seen, created_at 
+               FROM support_msgs ORDER BY id DESC LIMIT ?""",
+            (limit,)
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def get_support_msg(msg_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, user_id, first_name, text FROM support_msgs WHERE id = ?",
+            (msg_id,)
+        ) as cur:
+            return await cur.fetchone()
+
+
+async def mark_support_seen(msg_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE support_msgs SET seen = 1 WHERE id = ?", (msg_id,))
+        await db.commit()
+
+
+async def delete_support_msg(msg_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM support_msgs WHERE id = ?", (msg_id,))
+        await db.commit()
+
+
+async def get_support_count():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM support_msgs") as cur:
+            return (await cur.fetchone())[0]
 
 
 # ═══════════ FSM ═══════════
