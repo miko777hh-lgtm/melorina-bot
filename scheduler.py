@@ -9,7 +9,6 @@ TZ = ZoneInfo("Asia/Tehran")
 
 
 async def process_scheduled_banners(context):
-    """هر ۲۰ ثانیه بنرهای سررسید شده رو میفرسته"""
     while True:
         try:
             pending = await db.get_pending_banners()
