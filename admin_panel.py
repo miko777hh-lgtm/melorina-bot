@@ -1,31 +1,25 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import ReplyKeyboardMarkup
 from config import ADMIN_ID
 
 
-def admin_keyboard():
-    """پنل ادمین شیشه‌ای (Inline) — همه دکمه‌ها زیر پیام"""
-    return InlineKeyboardMarkup([
-        # ─── فایل ───
-        [InlineKeyboardButton("➕ افزودن فایل", callback_data="admin_add_file")],
-        [InlineKeyboardButton("✏️ ویرایش کپشن", callback_data="admin_edit_caption")],
-        [InlineKeyboardButton("🗑 حذف فایل", callback_data="admin_delete_file")],
-        [InlineKeyboardButton("📋 مشاهده فایل‌ها", callback_data="admin_list_files")],
+def admin_reply_keyboard():
+    """کیبورد پایین صفحه — جای کیبورد تایپ"""
+    return ReplyKeyboardMarkup([
+        ["➕ افزودن فایل", "✏️ ویرایش کپشن"],
+        ["🗑 حذف فایل", "📋 مشاهده فایل‌ها"],
+        ["➕ افزودن کانال", "🗑 حذف کانال"],
+        ["📋 مشاهده کانال‌ها"],
+        ["🖼 تنظیم بنر", "📢 بنر فوری"],
+        ["🔗 لینک یکبار مصرف"],
+        ["📊 آمار ربات"],
+    ], resize_keyboard=True)
 
-        # ─── کانال ───
-        [InlineKeyboardButton("➕ افزودن کانال", callback_data="admin_add_channel")],
-        [InlineKeyboardButton("🗑 حذف کانال", callback_data="admin_del_channel")],
-        [InlineKeyboardButton("📋 مشاهده کانال‌ها", callback_data="admin_list_channels")],
 
-        # ─── بنر ───
-        [InlineKeyboardButton("🖼 تنظیم بنر پای فایل", callback_data="admin_set_banner")],
-        [InlineKeyboardButton("📢 بنر فوری", callback_data="admin_broadcast")],
-
-        # ─── لینک یکبار مصرف ───
-        [InlineKeyboardButton("🔗 لینک یکبار مصرف", callback_data="otl_menu")],
-
-        # ─── آمار ───
-        [InlineKeyboardButton("📊 آمار ربات", callback_data="admin_stats")],
-    ])
+def user_reply_keyboard():
+    """کیبورد پایین صفحه — برای کاربر"""
+    return ReplyKeyboardMarkup([
+        ["📩 تماس با پشتیبانی"],
+    ], resize_keyboard=True)
 
 
 def is_admin(user_id):
@@ -34,6 +28,7 @@ def is_admin(user_id):
 
 async def show_admin_panel(update, context):
     await update.message.reply_text(
-        "🎛 پنل ادمین\n\nهمه گزینه‌ها در دسترسه:",
-        reply_markup=admin_keyboard()
+        "🎛 پنل ادمین فعال شد\n\n"
+        "از کیبورد پایین صفحه استفاده کن 👇",
+        reply_markup=admin_reply_keyboard()
     )
