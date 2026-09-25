@@ -188,25 +188,83 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_join_prompt(update, context)
             return
 
+    # ═══════════ FSM ادمین: جواب به پشتیبانی ═══════════
+    if is_admin(user.id) and state == "awaiting_reply_text":
+        target = data.get("target")
+        msg_id = data.get("msg_id")
+        if target and msg.text:
+            try:
+                await context.bot.send_message(
+                    target,
+                    f"📩 پاسخ پشتیبانی:\n\n{msg.text}"
+                )
+                await msg.reply_text("✅ جواب فرستاده شد.")
+                if msg_id:
+                    await db.mark_support_seen(msg_id)
+            except Exception as e:
+                await msg.reply_text(f"❌ خطا: {e}")
+        await db.clear_fsm(user.id)
+        return
+
     # ═══════════ کاربر: تماس با پشتیبانی ═══════════
     if msg.text == "📩 تماس با پشتیبانی":
         await db.set_fsm(user.id, "awaiting_support")
-        support_text = await db.get_setting("support_text",
-            "این پیام مستقیم میره به ادمین.\nحرفت رو بزن 👇")
-        await msg.reply_text(f"📩 تماس با پشتیبانی\n\n{support_text}")
+        await msg.reply_text(
+            "📩 تماس با پشتیبانی\n\n"
+            "پیامت رو بنویس و بفرست.\n"
+            "مستقیم می‌رسه به ادمین 👇"
+        )
         return
 
     if state == "awaiting_support":
+        if msg.text:
+            await db.add_support_msg(
+                user.id, user.username, user.first_name, msg.text
+            )
         try:
             await msg.forward(ADMIN_ID)
-            await msg.reply_text("✅ پیامت رسید دست ادمین.")
         except Exception:
-            await msg.reply_text(ERROR)
+            pass
+        await msg.reply_text("✅ پیامت رسید به ادمین.\nبه‌زودی جواب می‌گیری.")
         await db.clear_fsm(user.id)
         return
 
     # ═══════════ FSM ادمین ═══════════
     if is_admin(user.id):
+
+        # ─── جواب به پیام پشتیبانی ───
+        if msg.text and msg.text.startswith("reply_"):
+            try:
+                msg_id = int(msg.text.replace("reply_", "").strip())
+            except Exception:
+                await msg.reply_text("❌ فرمت اشتباه. مثال: `reply_5`")
+                return
+            s_msg = await db.get_support_msg(msg_id)
+            if not s_msg:
+                await msg.reply_text("❌ پیام پیدا نشد.")
+                return
+            sid, uid, fname, txt = s_msg
+            await db.set_fsm(user.id, "awaiting_reply_text", {"target": uid, "msg_id": msg_id})
+            await msg.reply_text(
+                f"✏️ جوابت به {fname} رو بنویس:\n\n"
+                f"💬 پیامش: {txt[:50]}"
+            )
+            return
+
+        # ─── پنل پیام‌ها ───
+        if msg.text == "📩 پنل پیام‌ها":
+            msgs = await db.get_all_support_msgs(30)
+            if not msgs:
+                await msg.reply_text("📭 پیامی نیست.")
+                return
+            text = f"📩 پیام‌های پشتیبانی ({len(msgs)})\n\n"
+            for m in msgs[:15]:
+                mid, uid, fname, txt, seen, created = m
+                status = "✅" if seen else "🆕"
+                text += f"{status} #{mid} | {fname}\n💬 {txt[:50]}\n\n"
+            text += "برای جواب دادن، بنویس:\n`reply_شماره`\n\nمثال: `reply_5`"
+            await msg.reply_text(text)
+            return
 
         # ─── دکمه‌های کیبورد ادمین ───
         if msg.text == "➕ افزودن فایل":
@@ -302,12 +360,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             files = await db.get_all_files()
             channels = await db.get_all_channels()
             links = await db.get_all_onetime_links()
+            support_count = await db.get_support_count()
             text = (
                 f"📊 آمار ربات\n\n"
                 f"👥 کاربران: {users}\n"
                 f"📁 فایل‌ها: {len(files)}\n"
                 f"📢 کانال‌ها: {len(channels)}\n"
-                f"🔗 لینک‌های یکبار مصرف: {len(links)}"
+                f"🔗 لینک‌های یکبار مصرف: {len(links)}\n"
+                f"📩 پیام‌ها: {support_count}"
             )
             await msg.reply_text(text)
             return
