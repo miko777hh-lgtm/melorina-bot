@@ -3,7 +3,7 @@ from config import ADMIN_ID
 
 
 def admin_reply_keyboard():
-    """کیبورد پایین صفحه — جای کیبورد تایپ"""
+    """کیبورد پایین صفحه — برای ادمین"""
     return ReplyKeyboardMarkup([
         ["➕ افزودن فایل", "✏️ ویرایش کپشن"],
         ["🗑 حذف فایل", "📋 مشاهده فایل‌ها"],
@@ -11,12 +11,13 @@ def admin_reply_keyboard():
         ["📋 مشاهده کانال‌ها"],
         ["🖼 تنظیم بنر", "📢 بنر فوری"],
         ["🔗 لینک یکبار مصرف"],
+        ["📩 پنل پیام‌ها"],
         ["📊 آمار ربات"],
     ], resize_keyboard=True)
 
 
 def user_reply_keyboard():
-    """کیبورد پایین صفحه — برای کاربر"""
+    """کیبورد پایین صفحه — برای کاربر عادی"""
     return ReplyKeyboardMarkup([
         ["📩 تماس با پشتیبانی"],
     ], resize_keyboard=True)
