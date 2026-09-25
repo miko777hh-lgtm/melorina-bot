@@ -1,5 +1,8 @@
 import asyncio
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -15,7 +18,11 @@ from admin_panel import (
     admin_reply_keyboard, user_reply_keyboard,
     is_admin, show_admin_panel
 )
-from banner import send_banner, broadcast_banner
+from banner import (
+    send_file_banner, broadcast_instant_banner,
+    capture_message
+)
+from scheduler import process_scheduled_banners
 from onetime_link import create_onetime_link, use_onetime_link, generate_bot_link
 
 logging.basicConfig(
@@ -23,6 +30,26 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+TZ = ZoneInfo("Asia/Tehran")
+
+
+def parse_datetime(text):
+    try:
+        parts = text.strip().split()
+        date_part = parts[0]
+        time_part = parts[1] if len(parts) > 1 else "00:00"
+        y, m, d = map(int, date_part.split("-"))
+        hh, mm = map(int, time_part.split(":"))
+        if y < 1500:
+            from jalali import jalali_to_gregorian
+            gy, gm, gd = jalali_to_gregorian(y, m, d)
+            dt = datetime(gy, gm, gd, hh, mm, tzinfo=TZ)
+        else:
+            dt = datetime(y, m, d, hh, mm, tzinfo=TZ)
+        return dt.isoformat()
+    except Exception:
+        return None
 
 
 # ═══════════ استارت ═══════════
@@ -32,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
 
-    # ─── لینک یکبار مصرف ───
+    # لینک یکبار مصرف
     if args and args[0].startswith("otl_"):
         code = args[0][4:]
         result = await use_onetime_link(code)
@@ -52,10 +79,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(OTL_WELCOME)
         await send_file_to_user(context, user.id, result["file_id_db"])
-        await send_banner(context, user.id)
+        await send_file_banner(context, user.id)
         return
 
-    # ─── استارت معمولی ───
+    # استارت معمولی
     if is_admin(user.id):
         await show_admin_panel(update, context)
         return
@@ -188,7 +215,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_join_prompt(update, context)
             return
 
-    # ═══════════ FSM ادمین: جواب به پشتیبانی ═══════════
+    # ═══════════ FSM ادمین: جواب پشتیبانی ═══════════
     if is_admin(user.id) and state == "awaiting_reply_text":
         target = data.get("target")
         msg_id = data.get("msg_id")
@@ -206,14 +233,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.clear_fsm(user.id)
         return
 
-    # ═══════════ کاربر: تماس با پشتیبانی ═══════════
+    # ═══════════ کاربر: پشتیبانی ═══════════
     if msg.text == "📩 تماس با پشتیبانی":
         await db.set_fsm(user.id, "awaiting_support")
-        await msg.reply_text(
-            "📩 تماس با پشتیبانی\n\n"
-            "پیامت رو بنویس و بفرست.\n"
-            "مستقیم می‌رسه به ادمین 👇"
-        )
+        await msg.reply_text(SUPPORT_PROMPT)
         return
 
     if state == "awaiting_support":
@@ -225,19 +248,19 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.forward(ADMIN_ID)
         except Exception:
             pass
-        await msg.reply_text("✅ پیامت رسید به ادمین.\nبه‌زودی جواب می‌گیری.")
+        await msg.reply_text(SUPPORT_SENT)
         await db.clear_fsm(user.id)
         return
 
     # ═══════════ FSM ادمین ═══════════
     if is_admin(user.id):
 
-        # ─── جواب به پیام پشتیبانی ───
+        # ─── reply_X ───
         if msg.text and msg.text.startswith("reply_"):
             try:
                 msg_id = int(msg.text.replace("reply_", "").strip())
             except Exception:
-                await msg.reply_text("❌ فرمت اشتباه. مثال: `reply_5`")
+                await msg.reply_text("❌ فرمت اشتباه. مثال: reply_5")
                 return
             s_msg = await db.get_support_msg(msg_id)
             if not s_msg:
@@ -245,10 +268,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             sid, uid, fname, txt = s_msg
             await db.set_fsm(user.id, "awaiting_reply_text", {"target": uid, "msg_id": msg_id})
-            await msg.reply_text(
-                f"✏️ جوابت به {fname} رو بنویس:\n\n"
-                f"💬 پیامش: {txt[:50]}"
-            )
+            await msg.reply_text(f"✏️ جوابت به {fname} رو بنویس:\n\n💬 {txt[:50]}")
             return
 
         # ─── پنل پیام‌ها ───
@@ -262,11 +282,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 mid, uid, fname, txt, seen, created = m
                 status = "✅" if seen else "🆕"
                 text += f"{status} #{mid} | {fname}\n💬 {txt[:50]}\n\n"
-            text += "برای جواب دادن، بنویس:\n`reply_شماره`\n\nمثال: `reply_5`"
+            text += "برای جواب دادن، بنویس:\n`reply_شماره`"
             await msg.reply_text(text)
             return
 
-        # ─── دکمه‌های کیبورد ادمین ───
+        # ─── فایل ───
         if msg.text == "➕ افزودن فایل":
             await db.set_fsm(user.id, "awaiting_file")
             await msg.reply_text("📎 فایل رو با کپشن بفرست:")
@@ -308,6 +328,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(text)
             return
 
+        # ─── کانال ───
         if msg.text == "➕ افزودن کانال":
             await db.set_fsm(user.id, "awaiting_channel")
             await msg.reply_text("📢 آیدی کانال رو بفرست:\nمثال: @mychannel")
@@ -331,18 +352,99 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(text)
             return
 
-        if msg.text == "🖼 تنظیم بنر":
-            await db.set_fsm(user.id, "awaiting_banner")
-            await msg.reply_text("🖼 بنر رو بفرست (عکس/ویدیو/فایل + کپشن):")
+        # ─── بنر پای فایل ───
+        if msg.text == "🖼 بنر پای فایل":
+            await db.set_fsm(user.id, "awaiting_file_banner")
+            await msg.reply_text(
+                "🖼 بنر پای فایل رو بفرست.\n\n"
+                "میتونه هر چیزی باشه: متن با لینک، فایل، عکس، ویدیو، فوروارد، نقل قول ✅"
+            )
             return
 
+        if state == "awaiting_file_banner":
+            await db.set_file_banner(capture_message(msg))
+            await msg.reply_text("✅ بنر پای فایل تنظیم شد.")
+            await db.clear_fsm(user.id)
+            return
+
+        # ─── بنر فوری ───
         if msg.text == "📢 بنر فوری":
-            count = await broadcast_banner(context)
+            await db.set_fsm(user.id, "awaiting_instant_banner")
+            await msg.reply_text(
+                "📢 بنر فوری رو بفرست.\n\n"
+                "بعد بنویس: `ارسال بنر فوری`"
+            )
+            return
+
+        if state == "awaiting_instant_banner":
+            await db.set_instant_banner(capture_message(msg))
+            await msg.reply_text("✅ تنظیم شد.\n\nبرای ارسال بنویس: `ارسال بنر فوری`")
+            await db.clear_fsm(user.id)
+            return
+
+        if msg.text == "ارسال بنر فوری":
+            count = await broadcast_instant_banner(context)
             await msg.reply_text(
                 f"✅ ارسال شد به {count} کاربر." if count else "❌ بنری تنظیم نشده."
             )
             return
 
+        # ─── بنر زمان‌بندی ───
+        if msg.text == "⏰ بنر زمان‌بندی":
+            await db.set_fsm(user.id, "awaiting_sched_banner_content")
+            await msg.reply_text(
+                "⏰ بنر زمان‌بندی\n\n"
+                "قدم ۱: محتوا رو بفرست.\n"
+                "(متن، عکس، ویدیو، فوروارد، نقل قول...)"
+            )
+            return
+
+        if state == "awaiting_sched_banner_content":
+            data["message_json"] = capture_message(msg)
+            await db.set_fsm(user.id, "awaiting_sched_banner_time", data)
+            await msg.reply_text(
+                "✅ محتوا ثبت شد.\n\n"
+                "قدم ۲: زمان ارسال رو بفرست:\n\n"
+                "📅 میلادی: `2026-10-01 20:30`\n"
+                "📅 شمسی: `1404-07-15 20:30`"
+            )
+            return
+
+        if state == "awaiting_sched_banner_time":
+            run_at = parse_datetime(msg.text.strip())
+            if not run_at:
+                await msg.reply_text("❌ فرمت اشتباه.\nدوباره: `YYYY-MM-DD HH:MM`")
+                return
+            await db.add_scheduled_banner(data["message_json"], run_at)
+            await db.clear_fsm(user.id)
+            await msg.reply_text(f"✅ بنر زمان‌بندی شد!\n📅 {run_at[:16]}")
+            return
+
+        # ─── لیست بنرها ───
+        if msg.text == "📋 لیست بنرها":
+            banners = await db.get_all_scheduled_banners()
+            if not banners:
+                await msg.reply_text("📭 بنری نیست.")
+                return
+            text = "📋 بنرهای زمان‌بندی:\n\n"
+            for b in banners[:20]:
+                bid, mjson, run_at, sent = b
+                s = "✅" if sent else "⏳"
+                text += f"{s} #{bid} | {run_at[:16]}\n"
+            text += "\nبرای حذف بنویس: `حذف بنر 5`"
+            await msg.reply_text(text)
+            return
+
+        if msg.text and msg.text.startswith("حذف بنر "):
+            try:
+                bid = int(msg.text.replace("حذف بنر ", "").strip())
+                await db.delete_scheduled_banner(bid)
+                await msg.reply_text(f"✅ بنر #{bid} حذف شد.")
+            except Exception:
+                await msg.reply_text("❌ فرمت اشتباه. مثال: حذف بنر 5")
+            return
+
+        # ─── لینک یکبار مصرف ───
         if msg.text == "🔗 لینک یکبار مصرف":
             links = await db.get_all_onetime_links()
             kb = [
@@ -355,19 +457,22 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        # ─── آمار ───
         if msg.text == "📊 آمار ربات":
             users = await db.get_users_count()
             files = await db.get_all_files()
             channels = await db.get_all_channels()
             links = await db.get_all_onetime_links()
             support_count = await db.get_support_count()
+            banners = await db.get_all_scheduled_banners()
             text = (
                 f"📊 آمار ربات\n\n"
                 f"👥 کاربران: {users}\n"
                 f"📁 فایل‌ها: {len(files)}\n"
                 f"📢 کانال‌ها: {len(channels)}\n"
-                f"🔗 لینک‌های یکبار مصرف: {len(links)}\n"
-                f"📩 پیام‌ها: {support_count}"
+                f"🔗 لینک‌ها: {len(links)}\n"
+                f"📩 پیام‌ها: {support_count}\n"
+                f"⏰ بنرها: {len(banners)}"
             )
             await msg.reply_text(text)
             return
@@ -389,22 +494,18 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ftype, file_id = "document", msg.document.file_id
             if file_id:
                 fid = await db.add_file(file_id, ftype, msg.caption or "")
-                await msg.reply_text(
-                    f"✅ ذخیره شد. (#{fid})\nکپشن: {msg.caption or 'بدون کپشن'}"
-                )
+                await msg.reply_text(f"✅ ذخیره شد. (#{fid})")
             else:
                 await msg.reply_text("❌ فایلی نبود.")
             await db.clear_fsm(user.id)
             return
 
-        # ─── FSM: ویرایش کپشن ───
         if state == "awaiting_new_caption":
             await db.update_caption(data.get("file_id"), msg.text or "")
             await msg.reply_text("✅ آپدیت شد.")
             await db.clear_fsm(user.id)
             return
 
-        # ─── FSM: افزودن کانال ───
         if state == "awaiting_channel":
             try:
                 chat = await context.bot.get_chat(msg.text.strip())
@@ -416,26 +517,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.clear_fsm(user.id)
             return
 
-        # ─── FSM: تنظیم بنر ───
-        if state == "awaiting_banner":
-            ftype, file_id = None, None
-            if msg.photo:
-                ftype, file_id = "photo", msg.photo[-1].file_id
-            elif msg.video:
-                ftype, file_id = "video", msg.video.file_id
-            elif msg.animation:
-                ftype, file_id = "animation", msg.animation.file_id
-            elif msg.document:
-                ftype, file_id = "document", msg.document.file_id
-            if file_id:
-                await db.set_banner(file_id, ftype, msg.caption or "")
-                await msg.reply_text("✅ بنر تنظیم شد.")
-            else:
-                await msg.reply_text("❌ بنر نبود.")
-            await db.clear_fsm(user.id)
-            return
-
-        # ─── FSM: لینک یکبار مصرف ───
         if state == "otl_step1":
             try:
                 hours = int(msg.text.strip())
@@ -450,17 +531,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expire_text = f"{hours} ساعت" if hours > 0 else "بدون انقضا"
             await msg.reply_text(
                 f"✅ لینک ساخته شد!\n\n"
-                f"📁 فایل: #{fid}\n"
-                f"⏰ اعتبار: {expire_text}\n\n"
-                f"🔗 `{link}`\n\n"
-                f"(کپی کن و برای خریدار بفرست)"
+                f"📁 فایل: #{fid}\n⏰ اعتبار: {expire_text}\n\n"
+                f"🔗 `{link}`"
             )
             return
 
     # ═══════════ فایل معمولی ═══════════
     if msg.photo or msg.video or msg.document or msg.audio or msg.voice or msg.animation:
         await msg.reply_text(FILE_SENT)
-        await send_banner(context, msg.chat_id)
+        await send_file_banner(context, msg.chat_id)
         return
 
     await msg.reply_text(FILE_NOT_FOUND)
@@ -469,6 +548,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════ Post Init ═══════════
 async def post_init(app):
     await db.init_db()
+    asyncio.create_task(process_scheduled_banners(app))
 
 
 # ═══════════ اجرا ═══════════
