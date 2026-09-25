@@ -5,14 +5,7 @@ import database as db
 
 def capture_message(msg):
     """ذخیره هر نوع پیام — پشتیبانی از همه چیز"""
-    data = {
-        "type": "text",
-        "text": None,
-        "entities": None,
-        "file_id": None,
-        "caption": None,
-        "caption_entities": None,
-    }
+    data = {"type": "text", "text": None, "entities": None, "file_id": None, "caption": None, "caption_entities": None}
 
     if msg.text:
         data["type"] = "text"
@@ -63,7 +56,7 @@ def capture_message(msg):
 
 
 async def send_captured(context, chat_id, message_json):
-    """ارسال پیام ذخیره شده — پشتیبانی از متن + لینک + نقل قول"""
+    """ارسال پیام ذخیره شده"""
     try:
         data = json.loads(message_json) if isinstance(message_json, str) else message_json
     except Exception:
@@ -76,41 +69,19 @@ async def send_captured(context, chat_id, message_json):
 
     try:
         if t == "text":
-            await context.bot.send_message(
-                chat_id, text,
-                entities=data.get("entities"),
-                disable_web_page_preview=False
-            )
+            await context.bot.send_message(chat_id, text, entities=data.get("entities"), disable_web_page_preview=False)
         elif t == "photo":
-            await context.bot.send_photo(
-                chat_id, file_id, caption=caption,
-                caption_entities=data.get("caption_entities")
-            )
+            await context.bot.send_photo(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
         elif t == "video":
-            await context.bot.send_video(
-                chat_id, file_id, caption=caption,
-                caption_entities=data.get("caption_entities")
-            )
+            await context.bot.send_video(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
         elif t == "animation":
-            await context.bot.send_animation(
-                chat_id, file_id, caption=caption,
-                caption_entities=data.get("caption_entities")
-            )
+            await context.bot.send_animation(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
         elif t == "document":
-            await context.bot.send_document(
-                chat_id, file_id, caption=caption,
-                caption_entities=data.get("caption_entities")
-            )
+            await context.bot.send_document(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
         elif t == "audio":
-            await context.bot.send_audio(
-                chat_id, file_id, caption=caption,
-                caption_entities=data.get("caption_entities")
-            )
+            await context.bot.send_audio(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
         elif t == "voice":
-            await context.bot.send_voice(
-                chat_id, file_id, caption=caption,
-                caption_entities=data.get("caption_entities")
-            )
+            await context.bot.send_voice(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
         elif t == "sticker":
             await context.bot.send_sticker(chat_id, file_id)
     except Exception as e:
@@ -118,7 +89,6 @@ async def send_captured(context, chat_id, message_json):
 
 
 async def send_file_banner(context, chat_id):
-    """ارسال بنر پای فایل"""
     banner = await db.get_file_banner()
     if not banner:
         return
@@ -126,7 +96,6 @@ async def send_file_banner(context, chat_id):
 
 
 async def broadcast_instant_banner(context):
-    """ارسال بنر فوری به همه کاربران"""
     banner = await db.get_instant_banner()
     if not banner:
         return 0
@@ -143,7 +112,6 @@ async def broadcast_instant_banner(context):
 
 
 async def broadcast_scheduled_banner(context, message_json):
-    """ارسال بنر زمان‌بندی به همه کاربران"""
     users = await db.get_all_users()
     count = 0
     for uid in users:
