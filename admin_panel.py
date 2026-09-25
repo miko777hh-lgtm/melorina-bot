@@ -1,10 +1,9 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from config import ADMIN_ID
-from texts import ADMIN_PANEL_TITLE
 
 
 def admin_keyboard():
-    """پنل ادمین شیشه‌ای — همه دکمه‌ها تو کیبورد"""
+    """پنل ادمین شیشه‌ای (Inline) — همه دکمه‌ها زیر پیام"""
     return InlineKeyboardMarkup([
         # ─── فایل ───
         [InlineKeyboardButton("➕ افزودن فایل", callback_data="admin_add_file")],
@@ -35,6 +34,6 @@ def is_admin(user_id):
 
 async def show_admin_panel(update, context):
     await update.message.reply_text(
-        ADMIN_PANEL_TITLE,
+        "🎛 پنل ادمین\n\nهمه گزینه‌ها در دسترسه:",
         reply_markup=admin_keyboard()
     )
