@@ -12,7 +12,8 @@ async def init_db():
                 user_id INTEGER PRIMARY KEY,
                 username TEXT,
                 first_name TEXT,
-                joined_at TEXT DEFAULT CURRENT_TIMESTAMP
+                joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_activity TEXT
             )
         """)
         await db.execute("""
@@ -24,8 +25,6 @@ async def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # kind: 'novel' or 'book'
-        # book_type: 'pdf_full' / 'pdf_pages' / 'text'
         await db.execute("""
             CREATE TABLE IF NOT EXISTS books (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,7 +62,6 @@ async def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # ─── اطلاعات هر کتاب (متن، عکس، فوروارد، نقل قول...) ───
         await db.execute("""
             CREATE TABLE IF NOT EXISTS book_infos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +87,44 @@ async def init_db():
                 chat_id TEXT UNIQUE NOT NULL,
                 title TEXT,
                 invite_link TEXT
+            )
+        """)
+        # ─── VPN links ───
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS vpn_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT,
+                message_json TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # ─── دکمه‌های سفارشی ───
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS custom_buttons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                button_name TEXT NOT NULL,
+                message_json TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # ─── پست‌های کانال برای ری‌اکشن ───
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS channel_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # ─── ری‌اکشن‌ها ───
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_reactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                chat_id TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                reacted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, message_id)
             )
         """)
         await db.execute("""
@@ -143,6 +179,15 @@ async def init_db():
         """)
         await db.commit()
 
+        # پیش‌فرض‌ها
+        defaults = {
+            "reaction_required": "5",
+            "inactive_days": "25",
+        }
+        for k, v in defaults.items():
+            await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+        await db.commit()
+
 
 # ═══════════ تنظیمات ═══════════
 async def get_setting(key, default=None):
@@ -162,6 +207,7 @@ async def set_setting(key, value):
 async def add_user(user_id, username, first_name):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", (user_id, username, first_name))
+        await db.execute("UPDATE users SET last_activity = CURRENT_TIMESTAMP WHERE user_id = ?", (user_id,))
         await db.commit()
 
 
@@ -175,6 +221,18 @@ async def get_users_count():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT COUNT(*) FROM users") as cur:
             return (await cur.fetchone())[0]
+
+
+async def get_inactive_users(days):
+    """کاربرانی که N روز غیرفعال بودن"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            f"""SELECT user_id, username, first_name, last_activity 
+                FROM users 
+                WHERE last_activity IS NULL 
+                   OR datetime(last_activity) < datetime('now', '-{days} days')"""
+        ) as cur:
+            return await cur.fetchall()
 
 
 # ═══════════ ژانرها ═══════════
@@ -197,7 +255,7 @@ async def delete_category(cat_id):
         await db.commit()
 
 
-# ═══════════ کتاب‌ها / رمان‌ها ═══════════
+# ═══════════ کتاب‌ها ═══════════
 async def add_book(kind, category_id, title_fa, title_en, author, translator, description, cover, book_type, is_paid, price, banner_json):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
@@ -244,7 +302,6 @@ async def get_book(book_id):
 
 
 async def search_books(query):
-    """جستجو تو کتاب‌ها (فقط kind=book)"""
     async with aiosqlite.connect(DB_PATH) as db:
         q = f"%{query}%"
         async with db.execute(
@@ -269,10 +326,7 @@ async def delete_book(book_id):
 # ═══════════ صفحات ═══════════
 async def add_page(book_id, page_number, content=None, file_id=None):
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO book_pages (book_id, page_number, content, file_id) VALUES (?, ?, ?, ?)",
-            (book_id, page_number, content, file_id)
-        )
+        cur = await db.execute("INSERT INTO book_pages (book_id, page_number, content, file_id) VALUES (?, ?, ?, ?)", (book_id, page_number, content, file_id))
         await db.commit()
         return cur.lastrowid
 
@@ -315,6 +369,81 @@ async def get_book_infos(book_id):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT id, message_json FROM book_infos WHERE book_id = ? ORDER BY id ASC", (book_id,)) as cur:
             return await cur.fetchall()
+
+
+# ═══════════ VPN Links ═══════════
+async def add_vpn_link(label, message_json):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("INSERT INTO vpn_links (label, message_json) VALUES (?, ?)", (label, message_json))
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_all_vpn_links():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id, label, message_json FROM vpn_links ORDER BY id ASC") as cur:
+            return await cur.fetchall()
+
+
+async def delete_vpn_link(vid):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM vpn_links WHERE id = ?", (vid,))
+        await db.commit()
+
+
+# ═══════════ دکمه‌های سفارشی ═══════════
+async def add_custom_button(button_name, message_json):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("INSERT INTO custom_buttons (button_name, message_json) VALUES (?, ?)", (button_name, message_json))
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_all_custom_buttons():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id, button_name, message_json FROM custom_buttons ORDER BY id ASC") as cur:
+            return await cur.fetchall()
+
+
+async def delete_custom_button(bid):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM custom_buttons WHERE id = ?", (bid,))
+        await db.commit()
+
+
+# ═══════════ پست‌های کانال (ری‌اکشن) ═══════════
+async def add_channel_post(chat_id, message_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("INSERT INTO channel_posts (chat_id, message_id) VALUES (?, ?)", (chat_id, message_id))
+        await db.commit()
+
+
+async def get_recent_channel_posts(limit=5):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT chat_id, message_id FROM channel_posts ORDER BY id DESC LIMIT ?", (limit,)) as cur:
+            return await cur.fetchall()
+
+
+async def add_user_reaction(user_id, chat_id, message_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO user_reactions (user_id, chat_id, message_id) VALUES (?, ?, ?)",
+            (user_id, chat_id, message_id)
+        )
+        await db.commit()
+
+
+async def count_user_reactions(user_id, chat_id, message_ids):
+    """چند تا از این پیام‌ها رو کاربر ری‌اکشن زده"""
+    if not message_ids:
+        return 0
+    async with aiosqlite.connect(DB_PATH) as db:
+        placeholders = ",".join("?" for _ in message_ids)
+        async with db.execute(
+            f"SELECT COUNT(*) FROM user_reactions WHERE user_id = ? AND chat_id = ? AND message_id IN ({placeholders})",
+            (user_id, chat_id, *message_ids)
+        ) as cur:
+            return (await cur.fetchone())[0]
 
 
 # ═══════════ امتیازها ═══════════
