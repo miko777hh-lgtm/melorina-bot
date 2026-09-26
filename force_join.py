@@ -23,7 +23,8 @@ async def send_join_prompt(update, context):
     keyboard = []
     for ch_id, chat_id, title, invite in channels:
         url = invite if invite else f"https://t.me/{chat_id.lstrip('@')}"
-        name = title.strip() if title and len(title.strip()) >= 3 else "عضویت"
+        # ← این خط: همیشه «عضویت» نشون بده
+        name = "عضویت"
         keyboard.append([InlineKeyboardButton(f"📢 {name}", url=url)])
     keyboard.append([InlineKeyboardButton(BTN_JOINED, callback_data="check_join")])
     await update.message.reply_text(START_BEFORE_JOIN, reply_markup=InlineKeyboardMarkup(keyboard))
