@@ -5,8 +5,7 @@ from config import ADMIN_ID
 def admin_reply_keyboard():
     return ReplyKeyboardMarkup([
         ["📁 ژانرها"],
-        ["📄 رمان PDF کلی", "📑 رمان PDF صفحه‌ای"],
-        ["📝 رمان نوشته‌ای"],
+        ["📖 رمان‌ها", "📚 کتاب‌ها"],
         ["📢 کانال‌ها"],
         ["📢 بنر فوری", "⏰ بنر زمان‌بندی"],
         ["📋 لیست بنرها"],
@@ -18,7 +17,8 @@ def admin_reply_keyboard():
 
 def user_reply_keyboard():
     return ReplyKeyboardMarkup([
-        ["📚 رمان‌ها", "⭐ امتیاز به ربات"],
+        ["📚 کتاب‌ها", "📖 رمان‌ها"],
+        ["🔍 جستجو", "⭐ امتیاز به ربات"],
         ["📩 تماس با پشتیبانی"],
     ], resize_keyboard=True)
 
@@ -31,4 +31,4 @@ async def show_admin_panel(update, context):
     await update.message.reply_text(
         "🎛 پنل ادمین\n\nاز کیبورد پایین استفاده کن 👇",
         reply_markup=admin_reply_keyboard()
-         )
+    )
