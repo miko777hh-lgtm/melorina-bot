@@ -78,9 +78,12 @@ async def build_user_keyboard():
         ["🎁 دعوت دوستان", "⭐ امتیاز به ربات"],
         ["📩 تماس با پشتیبانی"],
     ]
-    custom = await db.get_all_custom_buttons()
-    for cb in custom:
-        buttons.append([f"🎯 {cb[1]}"])
+    try:
+        custom = await db.get_all_custom_buttons()
+        for cb in custom:
+            buttons.append([f"🎯 {cb[1]}"])
+    except Exception:
+        pass
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 
@@ -121,7 +124,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             referred_by = None
 
-    # چک وجود کاربر
     async with __import__("aiosqlite").connect(db.DB_PATH) as conn:
         async with conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user.id,)) as cur:
             existing = await cur.fetchone()
@@ -233,15 +235,67 @@ async def send_book_to_user(context, chat_id, book_id):
 # ═══════════ کال‌بک ═══════════
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data
+
+    # Answer با try
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
     user_id = query.from_user.id
 
+    # ═══════════ امتیاز به ربات (اول از همه — FIXED) ═══════════
+    if data.startswith("rate_"):
+        logger.info(f"[RATE] data={data} user={user_id}")
+        try:
+            rating = int(data.split("_")[1])
+        except Exception as e:
+            logger.error(f"[RATE PARSE] {e}")
+            return
+
+        # ذخیره امتیاز
+        try:
+            await db.add_rating(user_id, query.from_user.username, query.from_user.first_name, rating, None)
+            logger.info(f"[RATE] saved rating={rating}")
+        except Exception as e:
+            logger.error(f"[RATE DB] {e}")
+
+        # ویرایش پیام
+        new_text = f"⭐ امتیازت ثبت شد: {'⭐' * rating}\n\nاگه حرفی داری، بنویس 👇"
+        try:
+            await query.edit_message_text(new_text)
+            logger.info(f"[RATE] edited")
+        except Exception as e:
+            logger.error(f"[RATE EDIT] {e}")
+            try:
+                await context.bot.send_message(user_id, new_text)
+            except Exception as e2:
+                logger.error(f"[RATE SEND] {e2}")
+
+        # FSM
+        try:
+            await db.set_fsm(user_id, "awaiting_rating_msg")
+        except Exception as e:
+            logger.error(f"[RATE FSM] {e}")
+
+        # به ادمین
+        try:
+            await context.bot.send_message(
+                ADMIN_ID,
+                f"⭐ امتیاز جدید\n\n👤 {query.from_user.first_name}\n🆔 `{query.from_user.id}`\n📛 @{query.from_user.username or 'ندارد'}\n⭐ {rating} از ۵",
+                parse_mode="Markdown"
+            )
+            logger.info(f"[RATE] admin notified")
+        except Exception as e:
+            logger.error(f"[RATE ADMIN] {e}")
+        return
+
+    # ═══════════ سایر ═══════════
     if data == "check_join":
         await check_join_callback(update, context)
         return
 
-    # VPN
     if data.startswith("vpn_"):
         vid = int(data.split("_")[1])
         links = await db.get_all_vpn_links()
@@ -254,14 +308,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         return
 
-    # Custom
     if data.startswith("custom_"):
         bid = int(data.split("_")[1])
         cbs = await db.get_all_custom_buttons()
         for c in cbs:
             if c[0] == bid:
                 if c[3] == "url":
-                    await query.answer("از دکمه کیبورد استفاده کن", show_alert=True)
+                    try:
+                        await query.answer("از دکمه کیبورد استفاده کن", show_alert=True)
+                    except Exception:
+                        pass
                     return
                 try:
                     await send_captured(context, user_id, c[2])
@@ -412,8 +468,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         bid = int(parts[1])
         rating = int(parts[2])
-        await db.add_book_rating(user_id, bid, rating)
-        await query.edit_message_text(f"⭐ امتیازت ثبت شد: {'⭐' * rating}")
+        try:
+            await db.add_book_rating(user_id, bid, rating)
+            await query.edit_message_text(f"⭐ امتیازت ثبت شد: {'⭐' * rating}")
+        except Exception as e:
+            logger.error(f"[BRATE] {e}")
         return
 
     if data.startswith("pg_"):
@@ -422,7 +481,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         page_num = int(parts[2])
         page = await db.get_page(bid, page_num)
         if not page:
-            await query.answer("پیدا نشد.", show_alert=True)
+            try:
+                await query.answer("پیدا نشد.", show_alert=True)
+            except Exception:
+                pass
             return
         page_id, content, file_id = page
         if content:
@@ -430,29 +492,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif file_id:
             try:
                 await context.bot.send_document(user_id, file_id, caption=f"صفحه {page_num}")
-            except Exception:
-                pass
-        return
-
-    # ═══════════ امتیاز به ربات (FIXED) ═══════════
-    if data.startswith("rate_"):
-        try:
-            rating = int(data.split("_")[1])
-            await db.add_rating(user_id, query.from_user.username, query.from_user.first_name, rating, None)
-            await query.edit_message_text(f"⭐ امتیازت ثبت شد: {'⭐' * rating}\n\nاگه حرفی داری، بنویس 👇")
-            await db.set_fsm(user_id, "awaiting_rating_msg")
-            try:
-                await context.bot.send_message(
-                    ADMIN_ID,
-                    f"⭐ امتیاز جدید\n\n👤 {query.from_user.first_name}\n🆔 `{query.from_user.id}`\n📛 @{query.from_user.username or 'ندارد'}\n⭐ {rating} از ۵",
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                logger.error(f"[RATE ADMIN] {e}")
-        except Exception as e:
-            logger.error(f"[RATE CB] {e}")
-            try:
-                await query.answer(f"❌ خطا", show_alert=True)
             except Exception:
                 pass
         return
@@ -811,8 +850,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"❌ خطا: {e}")
         return
 
-    # ═══════════ امتیاز به ربات (FIXED) ═══════════
+    # ═══════════ امتیاز به ربات ═══════════
     if msg.text == "⭐ امتیاز به ربات":
+        logger.info(f"[RATE START] user={user.id}")
         try:
             has = await db.has_rated(user.id)
         except Exception as e:
@@ -832,9 +872,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await msg.reply_text(RATING_PROMPT, reply_markup=kb)
+            logger.info(f"[RATE] sent prompt")
         except Exception as e:
             logger.error(f"[RATE SEND] {e}")
-            await msg.reply_text(f"❌ خطا در ارسال: {e}")
         return
 
     if state == "awaiting_rating_msg":
@@ -867,7 +907,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.clear_fsm(user.id)
         return
 
-    # دکمه سفارشی
     if msg.text and msg.text.startswith("🎯 "):
         name = msg.text[2:].strip()
         cbs = await db.get_all_custom_buttons()
