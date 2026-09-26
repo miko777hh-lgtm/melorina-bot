@@ -86,30 +86,25 @@ async def build_user_keyboard():
 
 # ═══════════ Fuzzy Search ═══════════
 async def fuzzy_search(query, threshold=0.5):
-    """جستجو با تحمل غلط املایی"""
     all_books = await db.get_all_books_for_search()
     results = []
     q = query.strip().lower()
     for b in all_books:
         bid, tfa, ten, author, desc, btype, is_paid, kind = b
-        # چک کردن هر فیلد
         score = 0
         for field in [tfa, ten, author, desc]:
             if not field:
                 continue
             field_lower = field.lower()
-            # چک زیررشته
             if q in field_lower:
                 score = max(score, 1.0)
                 break
-            # چک کلمات جدا
             for word in field_lower.split():
                 s = similarity(q, word)
                 if s > score:
                     score = s
         if score >= threshold:
             results.append((bid, tfa, ten, btype, is_paid, score))
-    # مرتب‌سازی بر اساس امتیاز
     results.sort(key=lambda x: x[5], reverse=True)
     return results[:15]
 
@@ -119,7 +114,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     args = context.args
 
-    # چک دعوت
     referred_by = None
     if args and args[0].startswith("ref_"):
         try:
@@ -127,29 +121,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             referred_by = None
 
-    # چک وجود کاربر (قبل از add)
+    # چک وجود کاربر
     async with __import__("aiosqlite").connect(db.DB_PATH) as conn:
         async with conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user.id,)) as cur:
             existing = await cur.fetchone()
 
     await db.add_user(user.id, user.username, user.first_name, referred_by)
 
-    # اگه کاربر جدید بود و از لینک دعوت اومده، به دعوت‌کننده خبر بده
     if not existing and referred_by and referred_by != user.id:
         try:
             ref_count = await db.get_referrals(referred_by)
             needed = int(await db.get_setting("referral_required", "3") or 3)
-            # پیام به دعوت‌کننده
             await context.bot.send_message(
                 referred_by,
                 f"🎉 یه نفر با لینک تو اومد!\n\n"
-                f"👥 تعداد دعوت‌ها: {ref_count} از {needed}\n"
+                f"👥 تعداد: {ref_count} از {needed}\n"
                 f"👤 {user.first_name}"
             )
         except Exception:
             pass
 
-    # لینک یکبار مصرف
     if args and args[0].startswith("otl_"):
         code = args[0][4:]
         result = await use_onetime_link(code)
@@ -196,18 +187,23 @@ async def send_book_to_user(context, chat_id, book_id):
     if translator:
         header += f"🖋 مترجم: {translator}\n"
 
-    # امتیاز کتاب
-    avg, count = await db.get_book_rating(b_id)
-    if count > 0:
-        header += f"⭐ {avg} ({count} نظر)\n"
+    try:
+        avg, count = await db.get_book_rating(b_id)
+        if count > 0:
+            header += f"⭐ {avg} ({count} نظر)\n"
+    except Exception:
+        pass
     header += "\n"
 
-    infos = await db.get_book_infos(b_id)
-    for info in infos:
-        try:
-            await send_captured(context, chat_id, info[1])
-        except Exception:
-            pass
+    try:
+        infos = await db.get_book_infos(b_id)
+        for info in infos:
+            try:
+                await send_captured(context, chat_id, info[1])
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     if btype == "text" or btype == "pdf_pages":
         pages = await db.get_pages(b_id)
@@ -228,7 +224,10 @@ async def send_book_to_user(context, chat_id, book_id):
                 pass
 
     if banner:
-        await send_captured(context, chat_id, banner)
+        try:
+            await send_captured(context, chat_id, banner)
+        except Exception:
+            pass
 
 
 # ═══════════ کال‌بک ═══════════
@@ -255,7 +254,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         return
 
-    # Custom (پیام)
+    # Custom
     if data.startswith("custom_"):
         bid = int(data.split("_")[1])
         cbs = await db.get_all_custom_buttons()
@@ -285,9 +284,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bid, tfa, ten, btype, is_paid, price = b
             prefix = "💳" if is_paid else "🆓"
             icon = kind_icon(kind, btype)
-            # امتیاز
-            avg, count = await db.get_book_rating(bid)
-            star = f" ⭐{avg}" if count > 0 else ""
+            try:
+                avg, count = await db.get_book_rating(bid)
+                star = f" ⭐{avg}" if count > 0 else ""
+            except Exception:
+                star = ""
             kb.append([InlineKeyboardButton(f"{prefix}{icon} {tfa}{star}", callback_data=f"book_{bid}")])
         back = "user_cats_novel" if kind == "novel" else "user_cats_book"
         kb.append([InlineKeyboardButton("🔙 بازگشت", callback_data=back)])
@@ -329,32 +330,32 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if translator:
             info += f"🖋 {translator}\n"
 
-        avg, count = await db.get_book_rating(b_id)
-        if count > 0:
-            info += f"⭐ {avg} ({count} نظر)\n"
+        try:
+            avg, count = await db.get_book_rating(b_id)
+            if count > 0:
+                info += f"⭐ {avg} ({count} نظر)\n"
+        except Exception:
+            pass
         if desc:
             info += f"\n📝 {desc}\n"
 
-        # کتاب بزودی
         if is_upcoming == 1:
             info += "\n🔔 این کتاب بزودی میاد."
             has_res = await db.has_reserved(user_id, b_id)
             if has_res:
                 info += "\n✅ رزرو کردی."
-                kb = []
+                await query.edit_message_text(info)
             else:
                 kb = [[InlineKeyboardButton("🔔 رزرو کن", callback_data=f"reserve_{b_id}")]]
-            await query.edit_message_text(info, reply_markup=InlineKeyboardMarkup(kb) if kb else None)
+                await query.edit_message_text(info, reply_markup=InlineKeyboardMarkup(kb))
             return
 
-        # پولی
         if is_paid == 1:
             info += f"\n💳 قیمت: {price or 'تماس با ادمین'}\n\nبرای خرید:\n👤 @Yuriii79"
             kb = [[InlineKeyboardButton("📩 خرید", url="https://t.me/Yuriii79")]]
             await query.edit_message_text(info, reply_markup=InlineKeyboardMarkup(kb))
             return
 
-        # رایگان — دکمه امتیاز
         kb_rate = [[
             InlineKeyboardButton("⭐1", callback_data=f"brate_{b_id}_1"),
             InlineKeyboardButton("⭐2", callback_data=f"brate_{b_id}_2"),
@@ -381,18 +382,23 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
 
-        infos = await db.get_book_infos(b_id)
-        for inf in infos:
-            try:
-                await send_captured(context, user_id, inf[1])
-            except Exception:
-                pass
+        try:
+            infos = await db.get_book_infos(b_id)
+            for inf in infos:
+                try:
+                    await send_captured(context, user_id, inf[1])
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         if banner:
-            await send_captured(context, user_id, banner)
+            try:
+                await send_captured(context, user_id, banner)
+            except Exception:
+                pass
         return
 
-    # رزرو
     if data.startswith("reserve_"):
         bid = int(data.split("_")[1])
         ok = await db.add_reservation(user_id, bid)
@@ -402,7 +408,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(ALREADY_RESERVED)
         return
 
-    # امتیاز کتاب
     if data.startswith("brate_"):
         parts = data.split("_")
         bid = int(parts[1])
@@ -411,7 +416,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"⭐ امتیازت ثبت شد: {'⭐' * rating}")
         return
 
-    # صفحه
     if data.startswith("pg_"):
         parts = data.split("_")
         bid = int(parts[1])
@@ -430,20 +434,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # امتیاز ربات
+    # ═══════════ امتیاز به ربات (FIXED) ═══════════
     if data.startswith("rate_"):
-        rating = int(data.split("_")[1])
-        await db.add_rating(user_id, query.from_user.username, query.from_user.first_name, rating, None)
-        await query.edit_message_text(f"⭐ امتیازت ثبت شد: {'⭐' * rating}\n\nاگه حرفی داری، بنویس 👇")
-        await db.set_fsm(user_id, "awaiting_rating_msg")
         try:
-            await context.bot.send_message(
-                ADMIN_ID,
-                f"⭐ امتیاز جدید\n\n👤 {query.from_user.first_name}\n🆔 `{query.from_user.id}`\n📛 @{query.from_user.username or 'ندارد'}\n⭐ {rating} از ۵",
-                parse_mode="Markdown"
-            )
-        except Exception:
-            pass
+            rating = int(data.split("_")[1])
+            await db.add_rating(user_id, query.from_user.username, query.from_user.first_name, rating, None)
+            await query.edit_message_text(f"⭐ امتیازت ثبت شد: {'⭐' * rating}\n\nاگه حرفی داری، بنویس 👇")
+            await db.set_fsm(user_id, "awaiting_rating_msg")
+            try:
+                await context.bot.send_message(
+                    ADMIN_ID,
+                    f"⭐ امتیاز جدید\n\n👤 {query.from_user.first_name}\n🆔 `{query.from_user.id}`\n📛 @{query.from_user.username or 'ندارد'}\n⭐ {rating} از ۵",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"[RATE ADMIN] {e}")
+        except Exception as e:
+            logger.error(f"[RATE CB] {e}")
+            try:
+                await query.answer(f"❌ خطا", show_alert=True)
+            except Exception:
+                pass
         return
 
     if data == "search_start":
@@ -455,7 +466,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(user_id):
         return
 
-    # ژانر
     if data == "newcat":
         await db.set_fsm(user_id, "awaiting_cat_name")
         await query.edit_message_text("📝 اسم ژانر:")
@@ -484,7 +494,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.")
         return
 
-    # رمان/کتاب
     if data == "admin_novel_menu":
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📄 PDF کلی", callback_data="novel_menu_pdf_full")],
@@ -569,7 +578,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.")
         return
 
-    # کانال
     if data == "admin_add_channel":
         await db.set_fsm(user_id, "awaiting_channel")
         await query.edit_message_text("📢 آیدی کانال:")
@@ -596,7 +604,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.")
         return
 
-    # VPN
     if data == "vpn_add":
         await db.set_fsm(user_id, "awaiting_vpn_content")
         await query.edit_message_text("🌐 محتوای فیلترشکن:")
@@ -625,7 +632,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.")
         return
 
-    # Custom Buttons
     if data == "cb_add":
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 پیام", callback_data="cb_add_msg")],
@@ -666,7 +672,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ حذف شد.")
         return
 
-    # تنظیمات
     if data == "set_reaction":
         await db.set_fsm(user_id, "awaiting_reaction_set")
         await query.edit_message_text("⚡ تعداد ری‌اکشن (0 = غیرفعال):")
@@ -677,14 +682,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if data == "set_referral":
         await db.set_fsm(user_id, "awaiting_referral_set")
-        await query.edit_message_text("🎁 تعداد دعوت مورد نیاز:")
+        await query.edit_message_text("🎁 تعداد دعوت:")
         return
     if data == "set_reminder":
         await db.set_fsm(user_id, "awaiting_reminder_set")
         await query.edit_message_text("📖 روز یادآور:")
         return
 
-    # لینک یکبار مصرف
     if data == "otl_new":
         books = await db.get_all_books()
         if not books:
@@ -720,7 +724,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state, data = await db.get_fsm(user.id)
 
-    # گروه
     if msg.chat.type in ("group", "supergroup"):
         if msg.text:
             try:
@@ -795,20 +798,31 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if msg.text == "🎁 دعوت دوستان":
-        bot_info = await context.bot.get_me()
-        link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
-        ref_count = await db.get_referrals(user.id)
-        needed = int(await db.get_setting("referral_required", "3") or 3)
-        text = REFERRAL_PROMPT.format(link=link, done=ref_count, need=needed)
-        if ref_count >= needed:
-            text += "\n\n" + REFERRAL_DONE
-        await msg.reply_text(text)
+        try:
+            bot_info = await context.bot.get_me()
+            link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
+            ref_count = await db.get_referrals(user.id)
+            needed = int(await db.get_setting("referral_required", "3") or 3)
+            text = REFERRAL_PROMPT.format(link=link, done=ref_count, need=needed)
+            if ref_count >= needed:
+                text += "\n\n" + REFERRAL_DONE
+            await msg.reply_text(text)
+        except Exception as e:
+            await msg.reply_text(f"❌ خطا: {e}")
         return
 
+    # ═══════════ امتیاز به ربات (FIXED) ═══════════
     if msg.text == "⭐ امتیاز به ربات":
-        if await db.has_rated(user.id):
+        try:
+            has = await db.has_rated(user.id)
+        except Exception as e:
+            logger.error(f"[RATE CHECK] {e}")
+            has = False
+
+        if has:
             await msg.reply_text(RATING_ALREADY)
             return
+
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⭐", callback_data="rate_1"),
              InlineKeyboardButton("⭐⭐", callback_data="rate_2"),
@@ -816,12 +830,19 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⭐⭐⭐⭐", callback_data="rate_4"),
              InlineKeyboardButton("⭐⭐⭐⭐⭐", callback_data="rate_5")],
         ])
-        await msg.reply_text(RATING_PROMPT, reply_markup=kb)
+        try:
+            await msg.reply_text(RATING_PROMPT, reply_markup=kb)
+        except Exception as e:
+            logger.error(f"[RATE SEND] {e}")
+            await msg.reply_text(f"❌ خطا در ارسال: {e}")
         return
 
     if state == "awaiting_rating_msg":
         if msg.text:
-            await db.add_support_msg(user.id, user.username, user.first_name, f"[امتیاز] {msg.text}")
+            try:
+                await db.add_support_msg(user.id, user.username, user.first_name, f"[امتیاز] {msg.text}")
+            except Exception:
+                pass
             try:
                 await msg.forward(ADMIN_ID)
             except Exception:
@@ -975,9 +996,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rem = await db.get_setting("reminder_days", "7")
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton(f"⚡ ری‌اکشن: {req}", callback_data="set_reaction")],
-                [InlineKeyboardButton(f"⏰ غیرفعال: {days} روز", callback_data="set_inactive")],
-                [InlineKeyboardButton(f"🎁 دعوت: {ref} نفر", callback_data="set_referral")],
-                [InlineKeyboardButton(f"📖 یادآور: {rem} روز", callback_data="set_reminder")],
+                [InlineKeyboardButton(f"⏰ غیرفعال: {days}", callback_data="set_inactive")],
+                [InlineKeyboardButton(f"🎁 دعوت: {ref}", callback_data="set_referral")],
+                [InlineKeyboardButton(f"📖 یادآور: {rem}", callback_data="set_reminder")],
             ])
             await msg.reply_text("⚙️ تنظیمات:", reply_markup=kb)
             return
@@ -985,7 +1006,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if msg.text == "🎁 تنظیم دعوت":
             ref = await db.get_setting("referral_required", "3")
             await db.set_fsm(user.id, "awaiting_referral_set")
-            await msg.reply_text(f"🎁 تعداد فعلی: {ref}\n\nعدد جدید رو بفرست:")
+            await msg.reply_text(f"🎁 تعداد فعلی: {ref}\n\nعدد جدید:")
             return
 
         if msg.text == "👥 کاربران غیرفعال":
@@ -1000,7 +1021,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(text)
             return
 
-        # FSM
         if state == "awaiting_cat_name":
             data["name"] = msg.text or ""
             await db.set_fsm(user.id, "awaiting_cat_desc", data)
@@ -1018,7 +1038,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"✅ ژانر ساخته شد. (#{cid})")
             return
 
-        # افزودن کتاب
         if state == "awaiting_book_name_fa":
             data["title_fa"] = msg.text or ""
             await db.set_fsm(user.id, "awaiting_book_name_en", data)
@@ -1055,12 +1074,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data["is_paid"] = 0
                 data["price"] = ""
                 await db.set_fsm(user.id, "awaiting_book_upcoming", data)
-                await msg.reply_text("🔔 بزودی میاد؟ (`بله` یا `نه`):")
+                await msg.reply_text("🔔 بزودی؟ (`بله` یا `نه`):")
                 return
         if state == "awaiting_book_price":
             data["price"] = msg.text or ""
             await db.set_fsm(user.id, "awaiting_book_upcoming", data)
-            await msg.reply_text("🔔 بزودی میاد؟ (`بله` یا `نه`):")
+            await msg.reply_text("🔔 بزودی؟ (`بله` یا `نه`):")
             return
         if state == "awaiting_book_upcoming":
             data["is_upcoming"] = 1 if (msg.text or "").strip() == "بله" else 0
@@ -1079,7 +1098,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data["book_id"] = bid
             if data.get("is_upcoming") == 1:
                 await db.clear_fsm(user.id)
-                await msg.reply_text(f"✅ کتاب بزودی ثبت شد. (#{bid})")
+                await msg.reply_text(f"✅ بزودی ثبت شد. (#{bid})")
                 return
             btype = data.get("book_type")
             if btype == "pdf_full":
@@ -1097,14 +1116,16 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_id = msg.document.file_id if msg.document else None
             if file_id:
                 await db.add_book_file(data["book_id"], "📄 PDF", file_id)
-                # اگه بزودی بود → به رزروکننده‌ها خبر بده
-                users = await db.get_book_reservations(data["book_id"])
-                for uid in users:
-                    try:
-                        await context.bot.send_message(uid, "🔔 کتابی که رزرو کرده بودی، الان آماده‌ست!")
-                    except Exception:
-                        pass
-                await db.mark_reservations_notified(data["book_id"])
+                try:
+                    users = await db.get_book_reservations(data["book_id"])
+                    for uid in users:
+                        try:
+                            await context.bot.send_message(uid, "🔔 کتابی که رزرو کرده بودی، آماده‌ست!")
+                        except Exception:
+                            pass
+                    await db.mark_reservations_notified(data["book_id"])
+                except Exception:
+                    pass
                 await db.clear_fsm(user.id)
                 await msg.reply_text(f"✅ کامل شد. (#{data['book_id']})")
             else:
@@ -1113,13 +1134,16 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if state == "awaiting_pdf_pages":
             if msg.text and msg.text.strip().lower() == "done":
-                users = await db.get_book_reservations(data["book_id"])
-                for uid in users:
-                    try:
-                        await context.bot.send_message(uid, "🔔 کتابی که رزرو کرده بودی، الان آماده‌ست!")
-                    except Exception:
-                        pass
-                await db.mark_reservations_notified(data["book_id"])
+                try:
+                    users = await db.get_book_reservations(data["book_id"])
+                    for uid in users:
+                        try:
+                            await context.bot.send_message(uid, "🔔 کتابی که رزرو کرده بودی، آماده‌ست!")
+                        except Exception:
+                            pass
+                    await db.mark_reservations_notified(data["book_id"])
+                except Exception:
+                    pass
                 await db.clear_fsm(user.id)
                 await msg.reply_text(f"✅ کامل شد. (#{data['book_id']})")
                 return
@@ -1136,13 +1160,16 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if state == "awaiting_text_pages":
             if msg.text and msg.text.strip().lower() == "done":
-                users = await db.get_book_reservations(data["book_id"])
-                for uid in users:
-                    try:
-                        await context.bot.send_message(uid, "🔔 کتابی که رزرو کرده بودی، الان آماده‌ست!")
-                    except Exception:
-                        pass
-                await db.mark_reservations_notified(data["book_id"])
+                try:
+                    users = await db.get_book_reservations(data["book_id"])
+                    for uid in users:
+                        try:
+                            await context.bot.send_message(uid, "🔔 کتابی که رزرو کرده بودی، آماده‌ست!")
+                        except Exception:
+                            pass
+                    await db.mark_reservations_notified(data["book_id"])
+                except Exception:
+                    pass
                 await db.clear_fsm(user.id)
                 await msg.reply_text(f"✅ کامل شد. (#{data['book_id']})")
                 return
@@ -1173,16 +1200,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("✅ اضافه شد.")
             return
 
-        # Custom Button FSM
         if state == "awaiting_cb_name":
             data["name"] = msg.text or ""
             ctype = data.get("type", "message")
             if ctype == "url":
                 await db.set_fsm(user.id, "awaiting_cb_url", data)
-                await msg.reply_text("🔗 لینک کانال رو بفرست:")
+                await msg.reply_text("🔗 لینک کانال:")
             else:
                 await db.set_fsm(user.id, "awaiting_cb_content", data)
-                await msg.reply_text("🎛 محتوای دکمه رو بفرست:")
+                await msg.reply_text("🎛 محتوا:")
             return
         if state == "awaiting_cb_url":
             url = msg.text.strip()
@@ -1197,7 +1223,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"✅ دکمه «{data['name']}» ساخته شد.")
             return
 
-        # تنظیمات
         if state == "awaiting_reaction_set":
             try:
                 n = int(msg.text.strip())
@@ -1211,7 +1236,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 n = int(msg.text.strip())
                 await db.set_setting("inactive_days", str(n))
-                await msg.reply_text(f"✅ {n} روز")
+                await msg.reply_text(f"✅ {n}")
             except Exception:
                 await msg.reply_text("❌ عدد.")
             await db.clear_fsm(user.id)
@@ -1220,7 +1245,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 n = int(msg.text.strip())
                 await db.set_setting("referral_required", str(n))
-                await msg.reply_text(f"✅ {n} نفر")
+                await msg.reply_text(f"✅ {n}")
             except Exception:
                 await msg.reply_text("❌ عدد.")
             await db.clear_fsm(user.id)
@@ -1229,13 +1254,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 n = int(msg.text.strip())
                 await db.set_setting("reminder_days", str(n))
-                await msg.reply_text(f"✅ {n} روز")
+                await msg.reply_text(f"✅ {n}")
             except Exception:
                 await msg.reply_text("❌ عدد.")
             await db.clear_fsm(user.id)
             return
 
-        # بنر
         if msg.text == "📢 بنر فوری":
             await db.set_fsm(user.id, "awaiting_instant_banner")
             await msg.reply_text("📢 بنر رو بفرست.\n\nبعد: `ارسال بنر فوری`")
@@ -1291,7 +1315,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.reply_text("❌ فرمت.")
             return
 
-        # لینک یکبار مصرف
         if msg.text == "🔗 لینک یکبار مصرف":
             links = await db.get_all_onetime_links()
             kb = [
@@ -1315,7 +1338,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"✅ ساخته شد!\n\n#{bid}\n⏰ {expire_text}\n\n🔗 `{link}`")
             return
 
-        # آمار
         if msg.text == "📊 آمار ربات":
             users = await db.get_users_count()
             cats = await db.get_all_categories()
