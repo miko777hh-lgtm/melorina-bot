@@ -24,9 +24,9 @@ async def process_scheduled_banners(context):
                     try:
                         count = await broadcast_scheduled_banner(context, message_json)
                         await db.mark_banner_sent(bid)
-                        print(f"[SCHED-BANNER] ✅ #{bid} → {count} کاربر")
+                        print(f"[SCHED] ✅ #{bid} → {count}")
                     except Exception as e:
-                        print(f"[SCHED-BANNER] ❌ #{bid}: {e}")
+                        print(f"[SCHED] ❌ #{bid}: {e}")
                         await db.increment_banner_retry(bid)
         except Exception as e:
             print(f"[SCHEDULER] {e}")
