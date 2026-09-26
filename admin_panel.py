@@ -5,10 +5,9 @@ from config import ADMIN_ID
 def admin_reply_keyboard():
     return ReplyKeyboardMarkup([
         ["📁 مدیریت ژانرها", "📚 مدیریت کتاب‌ها"],
-        ["📄 مدیریت صفحات"],
         ["➕ افزودن کانال", "🗑 حذف کانال"],
         ["📋 مشاهده کانال‌ها"],
-        ["🖼 بنر پای فایل", "📢 بنر فوری"],
+        ["📢 بنر فوری"],
         ["⏰ بنر زمان‌بندی", "📋 لیست بنرها"],
         ["🔗 لینک یکبار مصرف"],
         ["📩 پنل پیام‌ها"],
@@ -30,4 +29,4 @@ async def show_admin_panel(update, context):
     await update.message.reply_text(
         "🎛 پنل ادمین فعال شد\n\nاز کیبورد پایین صفحه استفاده کن 👇",
         reply_markup=admin_reply_keyboard()
-        )
+    )
