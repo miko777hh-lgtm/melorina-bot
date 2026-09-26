@@ -24,6 +24,8 @@ async def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # ─── کتاب‌ها ───
+        # book_type: 'pdf_full' / 'pdf_pages' / 'text'
         await db.execute("""
             CREATE TABLE IF NOT EXISTS books (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,29 +36,43 @@ async def init_db():
                 translator TEXT,
                 description TEXT,
                 cover TEXT,
-                book_type TEXT DEFAULT 'pdf',
+                book_type TEXT DEFAULT 'pdf_full',
                 is_paid INTEGER DEFAULT 0,
                 price TEXT,
-                preview_pages INTEGER DEFAULT 0,
                 banner_json TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # ─── صفحات (برای متن و PDF صفحه‌ای) ───
         await db.execute("""
             CREATE TABLE IF NOT EXISTS book_pages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 book_id INTEGER NOT NULL,
                 page_number INTEGER NOT NULL,
                 content TEXT,
+                file_id TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # ─── فایل‌ها (PDF کلی) ───
         await db.execute("""
             CREATE TABLE IF NOT EXISTS book_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 book_id INTEGER NOT NULL,
                 label TEXT NOT NULL,
                 file_id TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # ─── امتیازها ───
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS ratings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE NOT NULL,
+                username TEXT,
+                first_name TEXT,
+                rating INTEGER NOT NULL,
+                message TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -106,12 +122,6 @@ async def init_db():
             )
         """)
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        await db.execute("""
             CREATE TABLE IF NOT EXISTS fsm_state (
                 user_id INTEGER PRIMARY KEY,
                 state TEXT,
@@ -154,12 +164,6 @@ async def get_all_categories():
             return await cur.fetchall()
 
 
-async def get_category(cat_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT id, name, description, banner_json FROM categories WHERE id = ?", (cat_id,)) as cur:
-            return await cur.fetchone()
-
-
 async def update_category(cat_id, field, value):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(f"UPDATE categories SET {field} = ? WHERE id = ?", (value, cat_id))
@@ -172,14 +176,14 @@ async def delete_category(cat_id):
         await db.commit()
 
 
-# ═══════════ کتاب‌ها (رمان‌ها) ═══════════
-async def add_book(category_id, title_fa, title_en, author, translator, description, cover, book_type, is_paid, price, preview_pages, banner_json):
+# ═══════════ رمان‌ها ═══════════
+async def add_book(category_id, title_fa, title_en, author, translator, description, cover, book_type, is_paid, price, banner_json):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             """INSERT INTO books 
-               (category_id, title_fa, title_en, author, translator, description, cover, book_type, is_paid, price, preview_pages, banner_json) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (category_id, title_fa, title_en, author, translator, description, cover, book_type, is_paid, price, preview_pages, banner_json)
+               (category_id, title_fa, title_en, author, translator, description, cover, book_type, is_paid, price, banner_json) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (category_id, title_fa, title_en, author, translator, description, cover, book_type, is_paid, price, banner_json)
         )
         await db.commit()
         return cur.lastrowid
@@ -197,11 +201,17 @@ async def get_books_by_category(cat_id):
             return await cur.fetchall()
 
 
+async def get_books_by_type(book_type):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id, title_fa, title_en, book_type, is_paid, price FROM books WHERE book_type = ? ORDER BY id ASC", (book_type,)) as cur:
+            return await cur.fetchall()
+
+
 async def get_book(book_id):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             """SELECT id, category_id, title_fa, title_en, author, translator, description, cover, 
-                      book_type, is_paid, price, preview_pages, banner_json 
+                      book_type, is_paid, price, banner_json 
                FROM books WHERE id = ?""",
             (book_id,)
         ) as cur:
@@ -223,29 +233,26 @@ async def delete_book(book_id):
 
 
 # ═══════════ صفحات ═══════════
-async def add_page(book_id, page_number, content):
+async def add_page(book_id, page_number, content=None, file_id=None):
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("INSERT INTO book_pages (book_id, page_number, content) VALUES (?, ?, ?)", (book_id, page_number, content))
+        cur = await db.execute(
+            "INSERT INTO book_pages (book_id, page_number, content, file_id) VALUES (?, ?, ?, ?)",
+            (book_id, page_number, content, file_id)
+        )
         await db.commit()
         return cur.lastrowid
 
 
 async def get_pages(book_id):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT id, page_number, content FROM book_pages WHERE book_id = ? ORDER BY page_number ASC", (book_id,)) as cur:
+        async with db.execute("SELECT id, page_number, content, file_id FROM book_pages WHERE book_id = ? ORDER BY page_number ASC", (book_id,)) as cur:
             return await cur.fetchall()
 
 
 async def get_page(book_id, page_number):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT id, content FROM book_pages WHERE book_id = ? AND page_number = ?", (book_id, page_number)) as cur:
+        async with db.execute("SELECT id, content, file_id FROM book_pages WHERE book_id = ? AND page_number = ?", (book_id, page_number)) as cur:
             return await cur.fetchone()
-
-
-async def update_page(page_id, content):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE book_pages SET content = ? WHERE id = ?", (content, page_id))
-        await db.commit()
 
 
 async def delete_page(page_id):
@@ -274,6 +281,40 @@ async def delete_book_file(file_id_db):
         await db.commit()
 
 
+# ═══════════ امتیازها ═══════════
+async def add_rating(user_id, username, first_name, rating, message=None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT OR REPLACE INTO ratings (user_id, username, first_name, rating, message) VALUES (?, ?, ?, ?, ?)",
+            (user_id, username, first_name, rating, message)
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def has_rated(user_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM ratings WHERE user_id = ?", (user_id,)) as cur:
+            return (await cur.fetchone())[0] > 0
+
+
+async def get_all_ratings():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, user_id, first_name, rating, message, created_at FROM ratings ORDER BY id DESC"
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def get_rating_stats():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT AVG(rating), COUNT(*) FROM ratings") as cur:
+            row = await cur.fetchone()
+            avg = row[0] if row[0] else 0
+            count = row[1] if row[1] else 0
+            return round(avg, 2), count
+
+
 # ═══════════ کانال‌ها ═══════════
 async def add_channel(chat_id, title, invite_link):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -293,7 +334,7 @@ async def delete_channel(channel_id):
         await db.commit()
 
 
-# ═══════════ بنر فوری ═══════════
+# ═══════════ بنر ═══════════
 async def set_instant_banner(message_json):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR REPLACE INTO instant_banner (id, message_json) VALUES (1, ?)", (message_json,))
@@ -307,7 +348,6 @@ async def get_instant_banner():
             return row[0] if row else None
 
 
-# ═══════════ بنر زمان‌بندی ═══════════
 async def add_scheduled_banner(message_json, run_at):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("INSERT INTO scheduled_banners (message_json, run_at) VALUES (?, ?)", (message_json, run_at))
