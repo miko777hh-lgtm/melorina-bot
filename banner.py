@@ -4,9 +4,7 @@ import database as db
 
 
 def capture_message(msg):
-    """ذخیره هر نوع پیام — پشتیبانی از همه چیز"""
     data = {"type": "text", "text": None, "entities": None, "file_id": None, "caption": None, "caption_entities": None}
-
     if msg.text:
         data["type"] = "text"
         data["text"] = msg.text
@@ -40,33 +38,25 @@ def capture_message(msg):
         data["type"] = "audio"
         data["file_id"] = msg.audio.file_id
         data["caption"] = msg.caption
-        if msg.caption_entities:
-            data["caption_entities"] = [e.to_dict() for e in msg.caption_entities]
     elif msg.voice:
         data["type"] = "voice"
         data["file_id"] = msg.voice.file_id
         data["caption"] = msg.caption
-        if msg.caption_entities:
-            data["caption_entities"] = [e.to_dict() for e in msg.caption_entities]
     elif msg.sticker:
         data["type"] = "sticker"
         data["file_id"] = msg.sticker.file_id
-
     return json.dumps(data, ensure_ascii=False)
 
 
 async def send_captured(context, chat_id, message_json):
-    """ارسال پیام ذخیره شده"""
     try:
         data = json.loads(message_json) if isinstance(message_json, str) else message_json
     except Exception:
         return
-
     t = data.get("type")
     file_id = data.get("file_id")
     caption = data.get("caption")
     text = data.get("text")
-
     try:
         if t == "text":
             await context.bot.send_message(chat_id, text, entities=data.get("entities"), disable_web_page_preview=False)
@@ -79,20 +69,13 @@ async def send_captured(context, chat_id, message_json):
         elif t == "document":
             await context.bot.send_document(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
         elif t == "audio":
-            await context.bot.send_audio(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
+            await context.bot.send_audio(chat_id, file_id, caption=caption)
         elif t == "voice":
-            await context.bot.send_voice(chat_id, file_id, caption=caption, caption_entities=data.get("caption_entities"))
+            await context.bot.send_voice(chat_id, file_id, caption=caption)
         elif t == "sticker":
             await context.bot.send_sticker(chat_id, file_id)
     except Exception as e:
         print(f"[BANNER SEND] {e}")
-
-
-async def send_file_banner(context, chat_id):
-    banner = await db.get_file_banner()
-    if not banner:
-        return
-    await send_captured(context, chat_id, banner)
 
 
 async def broadcast_instant_banner(context):
