@@ -22,12 +22,8 @@ from banner import capture_message, send_captured, broadcast_instant_banner
 from scheduler import process_scheduled_banners
 from onetime_link import create_onetime_link, use_onetime_link, generate_bot_link
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 TZ = ZoneInfo("Asia/Tehran")
 
 
@@ -49,7 +45,6 @@ def parse_datetime(text):
         return None
 
 
-# ═══════════ کیبورد صفحات (6 تا 6 تا) ═══════════
 def pages_keyboard(book_id, total_pages):
     keyboard = []
     row = []
@@ -67,7 +62,6 @@ def pages_keyboard(book_id, total_pages):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.add_user(user.id, user.username, user.first_name)
-
     args = context.args
 
     if args and args[0].startswith("otl_"):
@@ -82,13 +76,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(OTL_INVALID)
             return
-
         if not await is_user_joined(context, user.id):
             await send_join_prompt(update, context)
             return
-
         await update.message.reply_text(OTL_WELCOME)
-        # ارسال کتاب به کاربر
         await send_book_to_user(context, user.id, result["book_id"])
         return
 
@@ -100,23 +91,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_join_prompt(update, context)
         return
 
-    await update.message.reply_text(
-        WELCOME_AFTER_JOIN,
-        reply_markup=user_reply_keyboard()
-    )
+    await update.message.reply_text(WELCOME_AFTER_JOIN, reply_markup=user_reply_keyboard())
 
 
-# ═══════════ ارسال کتاب به کاربر ═══════════
+# ═══════════ ارسال رمان به کاربر ═══════════
 async def send_book_to_user(context, chat_id, book_id):
-    """ارسال کامل کتاب (متن یا فایل)"""
     book = await db.get_book(book_id)
     if not book:
-        await context.bot.send_message(chat_id, "کتاب پیدا نشد.")
+        await context.bot.send_message(chat_id, BOOK_NOT_FOUND)
         return
-
     b_id, cat_id, title_fa, title_en, author, translator, desc, cover, btype, is_paid, price, preview, banner = book
 
-    # هدر
     header = f"📖 {title_fa}\n"
     if title_en:
         header += f"📕 {title_en}\n"
@@ -127,19 +112,12 @@ async def send_book_to_user(context, chat_id, book_id):
     header += "\n"
 
     if btype == "text":
-        # رمان متنی — لیست صفحات
         pages = await db.get_pages(b_id)
         if not pages:
             await context.bot.send_message(chat_id, "📭 صفحه‌ای نیست.")
             return
-        await context.bot.send_message(
-            chat_id,
-            header + "صفحه موردنظر رو انتخاب کن:",
-            reply_markup=pages_keyboard(b_id, len(pages))
-        )
-
+        await context.bot.send_message(chat_id, header + "صفحه موردنظر:", reply_markup=pages_keyboard(b_id, len(pages)))
     elif btype == "pdf":
-        # رمان PDF
         files = await db.get_book_files(b_id)
         if not files:
             await context.bot.send_message(chat_id, "📭 فایلی نیست.")
@@ -150,9 +128,7 @@ async def send_book_to_user(context, chat_id, book_id):
                 await context.bot.send_document(chat_id, f[2], caption=f[1])
             except Exception:
                 pass
-
     elif btype == "both":
-        # هردو — کاربر انتخاب کنه
         text_pages = await db.get_pages(b_id)
         files = await db.get_book_files(b_id)
         kb = []
@@ -163,11 +139,7 @@ async def send_book_to_user(context, chat_id, book_id):
         if not kb:
             await context.bot.send_message(chat_id, "📭 محتوایی نیست.")
             return
-        await context.bot.send_message(
-            chat_id,
-            header + "کدوم نسخه رو می‌خوای؟",
-            reply_markup=InlineKeyboardMarkup(kb)
-        )
+        await context.bot.send_message(chat_id, header + "کدوم نسخه؟", reply_markup=InlineKeyboardMarkup(kb))
 
 
 # ═══════════ کال‌بک ═══════════
@@ -177,29 +149,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
-    # ═══════════ بررسی عضویت ═══════════
     if data == "check_join":
         await check_join_callback(update, context)
         return
 
-    # ═══════════ منوی ژانرها (کاربر) ═══════════
+    # ═══════════ کاربر: ژانرها ═══════════
     if data == "user_categories":
         cats = await db.get_all_categories()
         if not cats:
-            await query.edit_message_text("📭 هنوز ژانری اضافه نشده.")
+            await query.edit_message_text("📭 ژانری نیست.")
             return
-        kb = []
-        for c in cats:
-            cid, cname, cdesc, cbanner = c
-            kb.append([InlineKeyboardButton(f"📁 {cname}", callback_data=f"cat_{cid}")])
-        await query.edit_message_text("📚 ژانرها:\n\nیکی رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(kb))
+        kb = [[InlineKeyboardButton(f"📁 {c[1]}", callback_data=f"cat_{c[0]}")] for c in cats]
+        await query.edit_message_text("📚 ژانرها:", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if data.startswith("cat_"):
         cid = int(data.split("_")[1])
         books = await db.get_books_by_category(cid)
         if not books:
-            await query.edit_message_text("📭 تو این ژانر کتابی نیست.")
+            await query.edit_message_text("📭 تو این ژانر رمانی نیست.")
             return
         kb = []
         for b in books:
@@ -207,7 +175,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prefix = "💳" if is_paid else "🆓"
             kb.append([InlineKeyboardButton(f"{prefix} {tfa}", callback_data=f"book_{bid}")])
         kb.append([InlineKeyboardButton("🔙 بازگشت", callback_data="user_categories")])
-        await query.edit_message_text("📚 کتاب‌ها:\n\nیکی رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(kb))
+        await query.edit_message_text("📖 رمان‌ها:", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if data.startswith("book_"):
@@ -216,23 +184,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not book:
             await query.edit_message_text(BOOK_NOT_FOUND)
             return
-
         b_id, cat_id, title_fa, title_en, author, translator, desc, cover, btype, is_paid, price, preview, banner = book
 
-        # پیام اطلاعات
         info = f"📖 {title_fa}\n"
         if title_en:
             info += f"📕 {title_en}\n"
         if author:
             info += f"✍️ {author}\n"
         if translator:
-            info += f"🖋 مترجم: {translator}\n"
+            info += f"🖋 {translator}\n"
         if desc:
             info += f"\n📝 {desc}\n"
 
-        # پولی
         if is_paid == 1:
-            info += f"\n💳 قیمت: {price or 'تماس با ادمین'}\n\nبرای خرید، به ادمین پیام بده."
+            info += f"\n💳 قیمت: {price or 'تماس با ادمین'}"
             kb = [[InlineKeyboardButton("📩 خرید از ادمین", callback_data=f"buy_{bid}")]]
             await query.edit_message_text(info, reply_markup=InlineKeyboardMarkup(kb))
             return
@@ -243,8 +208,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not pages:
                 await query.edit_message_text("📭 صفحه‌ای نیست.")
                 return
-            await query.edit_message_text(info + "\n\nصفحه موردنظر رو انتخاب کن:", reply_markup=pages_keyboard(b_id, len(pages)))
-
+            await query.edit_message_text(info + "\nصفحه موردنظر:", reply_markup=pages_keyboard(b_id, len(pages)))
         elif btype == "pdf":
             files = await db.get_book_files(b_id)
             if not files:
@@ -256,36 +220,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_document(user_id, f[2], caption=f[1])
                 except Exception:
                     pass
-
         elif btype == "both":
             text_pages = await db.get_pages(b_id)
             files = await db.get_book_files(b_id)
             kb = []
             if text_pages:
-                kb.append([InlineKeyboardButton("📱 نسخه متنی", callback_data=f"open_text_{b_id}")])
+                kb.append([InlineKeyboardButton("📱 متن", callback_data=f"open_text_{b_id}")])
             if files:
-                kb.append([InlineKeyboardButton("📄 نسخه PDF", callback_data=f"open_pdf_{b_id}")])
+                kb.append([InlineKeyboardButton("📄 PDF", callback_data=f"open_pdf_{b_id}")])
             if not kb:
                 await query.edit_message_text("📭 محتوایی نیست.")
                 return
-            await query.edit_message_text(info + "\n\nکدوم نسخه؟", reply_markup=InlineKeyboardMarkup(kb))
-
-        # بنر کتاب (اگه هست)
-        if banner:
-            await send_captured(context, user_id, banner)
+            await query.edit_message_text(info + "\nکدوم نسخه؟", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    # ═══════════ باز کردن نسخه متنی/PDF ═══════════
     if data.startswith("open_text_"):
         bid = int(data.split("_")[2])
         pages = await db.get_pages(bid)
         if not pages:
             await query.edit_message_text("📭 صفحه‌ای نیست.")
             return
-        await query.edit_message_text(
-            "📱 نسخه متنی\n\nصفحه موردنظر:",
-            reply_markup=pages_keyboard(bid, len(pages))
-        )
+        await query.edit_message_text("📱 نسخه متنی:", reply_markup=pages_keyboard(bid, len(pages)))
         return
 
     if data.startswith("open_pdf_"):
@@ -294,7 +249,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not files:
             await query.edit_message_text("📭 فایلی نیست.")
             return
-        await query.edit_message_text("📄 نسخه PDF در حال ارسال...")
+        await query.edit_message_text("📄 در حال ارسال PDF...")
         for f in files:
             try:
                 await context.bot.send_document(user_id, f[2], caption=f[1])
@@ -302,7 +257,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # ═══════════ انتخاب صفحه ═══════════
     if data.startswith("pg_"):
         parts = data.split("_")
         bid = int(parts[1])
@@ -315,12 +269,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(user_id, f"📄 صفحه {page_num}\n\n{content}")
         return
 
-    # ═══════════ خرید از ادمین ═══════════
     if data.startswith("buy_"):
         bid = int(data.split("_")[1])
         book = await db.get_book(bid)
         if not book:
-            await query.answer("کتاب پیدا نشد.", show_alert=True)
+            await query.answer("پیدا نشد.", show_alert=True)
             return
         b_id, cat_id, title_fa, title_en, author, translator, desc, cover, btype, is_paid, price, preview, banner = book
         try:
@@ -329,8 +282,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"👤 {query.from_user.first_name}\n"
                 f"🆔 `{query.from_user.id}`\n"
                 f"📛 @{query.from_user.username or 'ندارد'}\n\n"
-                f"📖 کتاب: {title_fa}\n"
-                f"💰 قیمت: {price or 'نامشخص'}"
+                f"📖 {title_fa}\n"
+                f"💰 {price or 'نامشخص'}"
             )
             await context.bot.send_message(ADMIN_ID, text, parse_mode="Markdown")
             await query.edit_message_text("✅ درخواستت رسید دست ادمین.")
@@ -338,37 +291,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(ERROR)
         return
 
-    # ═══════════ ادمین: ساخت ژانر جدید ═══════════
+    # ═══════════ فقط ادمین ═══════════
     if not is_admin(user_id):
         return
 
+    # ═══════════ ژانرها (ادمین) ═══════════
     if data == "newcat":
         await db.set_fsm(user_id, "awaiting_cat_name")
-        await query.edit_message_text("📝 اسم ژانر رو بفرست:")
-        return
-
-    if data == "newbook":
-        cats = await db.get_all_categories()
-        if not cats:
-            await query.edit_message_text("❌ اول یه ژانر بساز.")
-            return
-        kb = []
-        for c in cats:
-            kb.append([InlineKeyboardButton(c[1], callback_data=f"selcat_{c[0]}")])
-        await query.edit_message_text("📁 ژانر رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(kb))
-        return
-
-    if data.startswith("selcat_"):
-        cid = int(data.split("_")[1])
-        await db.set_fsm(user_id, "awaiting_book_name_fa", {"category_id": cid})
-        await query.edit_message_text("📖 اسم فارسی کتاب رو بفرست:")
-        return
-
-    # حذف ژانر
-    if data.startswith("delcat_"):
-        cid = int(data.split("_")[1])
-        await db.delete_category(cid)
-        await query.edit_message_text("✅ ژانر حذف شد.")
+        await query.edit_message_text("📝 اسم ژانر:")
         return
 
     if data == "admin_list_cats":
@@ -391,19 +321,34 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("کدوم؟", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    # حذف کتاب
-    if data.startswith("delbook_"):
-        bid = int(data.split("_")[1])
-        await db.delete_book(bid)
-        await query.edit_message_text("✅ کتاب حذف شد.")
+    if data.startswith("delcat_"):
+        cid = int(data.split("_")[1])
+        await db.delete_category(cid)
+        await query.edit_message_text("✅ حذف شد.")
+        return
+
+    # ═══════════ رمان‌ها (ادمین) ═══════════
+    if data == "newbook":
+        cats = await db.get_all_categories()
+        if not cats:
+            await query.edit_message_text("❌ اول ژانر بساز.")
+            return
+        kb = [[InlineKeyboardButton(c[1], callback_data=f"selcat_{c[0]}")] for c in cats]
+        await query.edit_message_text("📁 ژانر:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if data.startswith("selcat_"):
+        cid = int(data.split("_")[1])
+        await db.set_fsm(user_id, "awaiting_book_name_fa", {"category_id": cid})
+        await query.edit_message_text("📖 اسم فارسی:")
         return
 
     if data == "admin_list_books":
         books = await db.get_all_books()
         if not books:
-            await query.edit_message_text("📭 کتابی نیست.")
+            await query.edit_message_text("📭 رمانی نیست.")
             return
-        text = "📚 کتاب‌ها:\n\n"
+        text = "📖 رمان‌ها:\n\n"
         for b in books:
             bid, cid, tfa, ten, btype, is_paid, price = b
             t = "💳" if is_paid else "🆓"
@@ -414,37 +359,62 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "admin_del_book":
         books = await db.get_all_books()
         if not books:
-            await query.edit_message_text("📭 کتابی نیست.")
+            await query.edit_message_text("📭 رمانی نیست.")
             return
         kb = [[InlineKeyboardButton(f"🗑 {b[2]}", callback_data=f"delbook_{b[0]}")] for b in books]
         await query.edit_message_text("کدوم؟", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    # حذف کانال
+    if data.startswith("delbook_"):
+        bid = int(data.split("_")[1])
+        await db.delete_book(bid)
+        await query.edit_message_text("✅ حذف شد.")
+        return
+
+    # ═══════════ کانال ═══════════
+    if data == "admin_add_channel":
+        await db.set_fsm(user_id, "awaiting_channel")
+        await query.edit_message_text("📢 آیدی کانال:")
+        return
+
+    if data == "admin_list_channels":
+        channels = await db.get_all_channels()
+        if not channels:
+            await query.edit_message_text("📭 کانالی نیست.")
+            return
+        text = "📋 کانال‌ها:\n\n" + "\n".join(f"• `{c[1]}`" for c in channels)
+        await query.edit_message_text(text)
+        return
+
+    if data == "admin_del_channel":
+        channels = await db.get_all_channels()
+        if not channels:
+            await query.edit_message_text("📭 کانالی نیست.")
+            return
+        kb = [[InlineKeyboardButton(f"🗑 {c[1]}", callback_data=f"delch_{c[0]}")] for c in channels]
+        await query.edit_message_text("کدوم؟", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
     if data.startswith("delch_"):
         cid = int(data.split("_")[1])
         await db.delete_channel(cid)
-        await query.edit_message_text("✅ کانال حذف شد.")
+        await query.edit_message_text("✅ حذف شد.")
         return
 
-    # لینک یکبار مصرف
+    # ═══════════ لینک یکبار مصرف ═══════════
     if data == "otl_new":
         books = await db.get_all_books()
         if not books:
-            await query.edit_message_text("📭 کتابی نیست.")
+            await query.edit_message_text("📭 رمانی نیست.")
             return
         kb = [[InlineKeyboardButton(f"📖 {b[2]}", callback_data=f"otl_book_{b[0]}")] for b in books[:20]]
-        await query.edit_message_text("کدوم کتاب؟", reply_markup=InlineKeyboardMarkup(kb))
+        await query.edit_message_text("کدوم رمان؟", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if data.startswith("otl_book_"):
         bid = int(data.split("_")[2])
         await db.set_fsm(user_id, "otl_step1", {"book_id": bid})
-        await query.edit_message_text(
-            "⏰ مدت اعتبار (ساعت):\n"
-            "مثال: `24` = ۲۴ ساعت\n"
-            "`0` = بدون انقضا"
-        )
+        await query.edit_message_text("⏰ مدت اعتبار (ساعت) — مثال: `24` یا `0`:")
         return
 
     if data == "otl_list":
@@ -456,7 +426,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for l in links[:20]:
             lid, code, bid, used, exp, created = l
             s = "✅" if used else "🟢"
-            text += f"{s} #{lid} | `{code}` | کتاب #{bid}\n"
+            text += f"{s} #{lid} | `{code}` | رمان #{bid}\n"
         await query.edit_message_text(text)
         return
 
@@ -470,7 +440,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state, data = await db.get_fsm(user.id)
 
-    # ═══════════ گروه ═══════════
+    # گروه
     if msg.chat.type in ("group", "supergroup"):
         if msg.text:
             try:
@@ -481,20 +451,20 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"[AUTO-REPLY] {e}")
         return
 
-    # ═══════════ چت خصوصی ═══════════
+    # چت خصوصی — چک عضویت
     if not is_admin(user.id):
         if not await is_user_joined(context, user.id):
             await send_join_prompt(update, context)
             return
 
-    # ═══════════ کاربر: کتاب‌ها ═══════════
-    if msg.text == "📚 کتاب‌ها":
+    # ═══════════ کاربر: رمان‌ها ═══════════
+    if msg.text == "📖 رمان‌ها":
         cats = await db.get_all_categories()
         if not cats:
-            await msg.reply_text("📭 هنوز ژانری اضافه نشده.")
+            await msg.reply_text("📭 ژانری نیست.")
             return
         kb = [[InlineKeyboardButton(f"📁 {c[1]}", callback_data=f"cat_{c[0]}")] for c in cats]
-        await msg.reply_text("📚 ژانرها:\n\nیکی رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(kb))
+        await msg.reply_text("📚 ژانرها:", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     # ═══════════ کاربر: پشتیبانی ═══════════
@@ -514,23 +484,23 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.clear_fsm(user.id)
         return
 
-    # ═══════════ FSM ادمین ═══════════
+    # ═══════════ ادمین ═══════════
     if is_admin(user.id):
 
-        # ─── reply_X ───
+        # reply_X
         if msg.text and msg.text.startswith("reply_"):
             try:
                 msg_id = int(msg.text.replace("reply_", "").strip())
             except Exception:
-                await msg.reply_text("❌ فرمت اشتباه. مثال: reply_5")
+                await msg.reply_text("❌ مثال: reply_5")
                 return
             s_msg = await db.get_support_msg(msg_id)
             if not s_msg:
-                await msg.reply_text("❌ پیام پیدا نشد.")
+                await msg.reply_text("❌ پیدا نشد.")
                 return
             sid, uid, fname, txt = s_msg
             await db.set_fsm(user.id, "awaiting_reply_text", {"target": uid, "msg_id": msg_id})
-            await msg.reply_text(f"✏️ جوابت به {fname} رو بنویس:\n\n💬 {txt[:50]}")
+            await msg.reply_text(f"✏️ جواب به {fname}:\n\n💬 {txt[:50]}")
             return
 
         if state == "awaiting_reply_text":
@@ -547,13 +517,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.clear_fsm(user.id)
             return
 
-        # ─── پنل پیام‌ها ───
+        # پنل پیام‌ها
         if msg.text == "📩 پنل پیام‌ها":
             msgs = await db.get_all_support_msgs(30)
             if not msgs:
                 await msg.reply_text("📭 پیامی نیست.")
                 return
-            text = f"📩 پیام‌ها ({len(msgs)})\n\n"
+            text = f"📩 پیام‌ها ({len(msgs)}):\n\n"
             for m in msgs[:15]:
                 mid, uid, fname, txt, seen, created = m
                 status = "✅" if seen else "🆕"
@@ -562,31 +532,41 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(text)
             return
 
-        # ─── مدیریت ژانرها ───
-        if msg.text == "📁 مدیریت ژانرها":
+        # ژانرها
+        if msg.text == "📁 ژانرها":
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ افزودن ژانر", callback_data="newcat")],
                 [InlineKeyboardButton("📋 لیست ژانرها", callback_data="admin_list_cats")],
                 [InlineKeyboardButton("🗑 حذف ژانر", callback_data="admin_del_cat")],
             ])
-            await msg.reply_text("📁 مدیریت ژانرها:", reply_markup=kb)
+            await msg.reply_text("📁 ژانرها:", reply_markup=kb)
             return
 
-        # ─── مدیریت کتاب‌ها ───
-        if msg.text == "📚 مدیریت کتاب‌ها":
+        # رمان‌ها
+        if msg.text == "📖 رمان‌ها":
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ افزودن کتاب", callback_data="newbook")],
-                [InlineKeyboardButton("📋 لیست کتاب‌ها", callback_data="admin_list_books")],
-                [InlineKeyboardButton("🗑 حذف کتاب", callback_data="admin_del_book")],
+                [InlineKeyboardButton("➕ افزودن رمان", callback_data="newbook")],
+                [InlineKeyboardButton("📋 لیست رمان‌ها", callback_data="admin_list_books")],
+                [InlineKeyboardButton("🗑 حذف رمان", callback_data="admin_del_book")],
             ])
-            await msg.reply_text("📚 مدیریت کتاب‌ها:", reply_markup=kb)
+            await msg.reply_text("📖 رمان‌ها:", reply_markup=kb)
             return
 
-        # ═══════════ FSM: افزودن ژانر ═══════════
+        # کانال‌ها
+        if msg.text == "📢 کانال‌ها":
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ افزودن کانال", callback_data="admin_add_channel")],
+                [InlineKeyboardButton("📋 لیست کانال‌ها", callback_data="admin_list_channels")],
+                [InlineKeyboardButton("🗑 حذف کانال", callback_data="admin_del_channel")],
+            ])
+            await msg.reply_text("📢 کانال‌ها:", reply_markup=kb)
+            return
+
+        # FSM: افزودن ژانر
         if state == "awaiting_cat_name":
             data["name"] = msg.text or ""
             await db.set_fsm(user.id, "awaiting_cat_desc", data)
-            await msg.reply_text("📝 توضیحات ژانر (یا `skip`):")
+            await msg.reply_text("📝 توضیحات (یا `skip`):")
             return
 
         if state == "awaiting_cat_desc":
@@ -597,16 +577,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if state == "awaiting_cat_banner":
-            if msg.text and msg.text.lower() == "skip":
-                banner = None
-            else:
-                banner = capture_message(msg)
+            banner = None if (msg.text and msg.text.lower() == "skip") else capture_message(msg)
             cid = await db.add_category(data["name"], data.get("description", ""), banner)
             await db.clear_fsm(user.id)
-            await msg.reply_text(f"✅ ژانر «{data['name']}» ساخته شد. (#{cid})")
+            await msg.reply_text(f"✅ ژانر ساخته شد. (#{cid})")
             return
 
-        # ═══════════ FSM: افزودن کتاب ═══════════
+        # FSM: افزودن رمان
         if state == "awaiting_book_name_fa":
             data["title_fa"] = msg.text or ""
             await db.set_fsm(user.id, "awaiting_book_name_en", data)
@@ -614,63 +591,42 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if state == "awaiting_book_name_en":
-            txt = msg.text or ""
-            data["title_en"] = "" if txt.lower() == "skip" else txt
+            data["title_en"] = "" if (msg.text and msg.text.lower() == "skip") else (msg.text or "")
             await db.set_fsm(user.id, "awaiting_book_author", data)
-            await msg.reply_text("✍️ اسم نویسنده (یا `skip`):")
+            await msg.reply_text("✍️ نویسنده (یا `skip`):")
             return
 
         if state == "awaiting_book_author":
-            txt = msg.text or ""
-            data["author"] = "" if txt.lower() == "skip" else txt
+            data["author"] = "" if (msg.text and msg.text.lower() == "skip") else (msg.text or "")
             await db.set_fsm(user.id, "awaiting_book_translator", data)
-            await msg.reply_text("🖋 اسم مترجم (یا `skip`):")
+            await msg.reply_text("🖋 مترجم (یا `skip`):")
             return
 
         if state == "awaiting_book_translator":
-            txt = msg.text or ""
-            data["translator"] = "" if txt.lower() == "skip" else txt
+            data["translator"] = "" if (msg.text and msg.text.lower() == "skip") else (msg.text or "")
             await db.set_fsm(user.id, "awaiting_book_desc", data)
             await msg.reply_text("📝 توضیحات (یا `skip`):")
             return
 
         if state == "awaiting_book_desc":
-            txt = msg.text or ""
-            data["description"] = "" if txt.lower() == "skip" else txt
-            await db.set_fsm(user.id, "awaiting_book_cover", data)
-            await msg.reply_text("🖼 کاور کتاب (یا `skip`):")
-            return
-
-        if state == "awaiting_book_cover":
-            if msg.text and msg.text.lower() == "skip":
-                data["cover"] = None
-            else:
-                if msg.photo:
-                    data["cover"] = msg.photo[-1].file_id
-                else:
-                    data["cover"] = None
+            data["description"] = "" if (msg.text and msg.text.lower() == "skip") else (msg.text or "")
             await db.set_fsm(user.id, "awaiting_book_type", data)
-            await msg.reply_text(
-                "📄 نوع کتاب:\n\n"
-                "`متن` = رمان متنی (صفحه‌به‌صفحه)\n"
-                "`PDF` = فایل PDF\n"
-                "`هردو` = هم متن هم PDF"
-            )
+            await msg.reply_text("📄 نوع رمان:\n\n`pdf` = فقط PDF\n`متن` = صفحه‌به‌صفحه\n`هردو` = هردو")
             return
 
         if state == "awaiting_book_type":
             txt = (msg.text or "").strip().lower()
-            if txt == "متن":
-                data["book_type"] = "text"
-            elif txt == "pdf":
+            if txt == "pdf":
                 data["book_type"] = "pdf"
+            elif txt == "متن":
+                data["book_type"] = "text"
             elif txt == "هردو":
                 data["book_type"] = "both"
             else:
-                await msg.reply_text("❌ بنویس: `متن` یا `PDF` یا `هردو`")
+                await msg.reply_text("❌ بنویس `pdf` یا `متن` یا `هردو`")
                 return
             await db.set_fsm(user.id, "awaiting_book_paid", data)
-            await msg.reply_text("💰 پولی هست؟ (`پولی` یا `رایگان`):")
+            await msg.reply_text("💰 پولی؟ (`پولی` یا `رایگان`):")
             return
 
         if state == "awaiting_book_paid":
@@ -678,99 +634,69 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if txt == "پولی":
                 data["is_paid"] = 1
                 await db.set_fsm(user.id, "awaiting_book_price", data)
-                await msg.reply_text("💵 قیمت (مثلاً: ۵۰ هزار تومان):")
+                await msg.reply_text("💵 قیمت:")
                 return
             else:
                 data["is_paid"] = 0
                 data["price"] = ""
-                await db.set_fsm(user.id, "awaiting_book_preview", data)
-                await msg.reply_text("🔓 چند صفحه پیش‌نمایش رایگان؟ (یا `0`):")
+                await db.set_fsm(user.id, "awaiting_book_banner", data)
+                await msg.reply_text("🖼 بنر رمان (یا `skip`):")
                 return
 
         if state == "awaiting_book_price":
             data["price"] = msg.text or ""
-            await db.set_fsm(user.id, "awaiting_book_preview", data)
-            await msg.reply_text("🔓 چند صفحه پیش‌نمایش رایگان؟ (یا `0`):")
-            return
-
-        if state == "awaiting_book_preview":
-            try:
-                data["preview"] = int(msg.text.strip())
-            except Exception:
-                data["preview"] = 0
             await db.set_fsm(user.id, "awaiting_book_banner", data)
-            await msg.reply_text("🖼 بنر کتاب (یا `skip`):")
+            await msg.reply_text("🖼 بنر رمان (یا `skip`):")
             return
 
         if state == "awaiting_book_banner":
-            if msg.text and msg.text.lower() == "skip":
-                data["banner"] = None
-            else:
-                data["banner"] = capture_message(msg)
-            
+            banner = None if (msg.text and msg.text.lower() == "skip") else capture_message(msg)
             bid = await db.add_book(
-                data["category_id"],
-                data["title_fa"],
-                data.get("title_en", ""),
-                data.get("author", ""),
-                data.get("translator", ""),
-                data.get("description", ""),
-                data.get("cover"),
-                data.get("book_type", "pdf"),
-                data.get("is_paid", 0),
-                data.get("price", ""),
-                data.get("preview", 0),
-                data.get("banner")
+                data["category_id"], data["title_fa"], data.get("title_en", ""),
+                data.get("author", ""), data.get("translator", ""), data.get("description", ""),
+                None, data.get("book_type", "pdf"), data.get("is_paid", 0),
+                data.get("price", ""), 0, banner
             )
             data["book_id"] = bid
-
             btype = data.get("book_type")
-            if btype == "text":
-                await db.clear_fsm(user.id)
-                await msg.reply_text(
-                    f"✅ کتاب «{data['title_fa']}» ساخته شد. (#{bid})\n\n"
-                    f"حالا از پنل → 📄 مدیریت صفحات → {data['title_fa']} → صفحات رو اضافه کن."
-                )
-            elif btype == "pdf":
+
+            if btype == "pdf":
                 await db.set_fsm(user.id, "awaiting_pdf_file", data)
                 await msg.reply_text("📄 فایل PDF رو بفرست:")
+            elif btype == "text":
+                await db.set_fsm(user.id, "awaiting_text_pages", data)
+                await msg.reply_text("📱 متن صفحه ۱ رو بفرست (برای پایان: `done`):")
             elif btype == "both":
                 await db.set_fsm(user.id, "awaiting_text_pages", data)
-                await msg.reply_text("📱 اول صفحات متنی رو یکی‌یکی بفرست.\nوقتی تموم شد بنویس `done`.")
+                await msg.reply_text("📱 اول متن صفحات. یکی‌یکی بفرست (پایان: `done`):")
             return
 
-        # ─── متن: صفحات ───
         if state == "awaiting_text_pages":
             if msg.text and msg.text.strip().lower() == "done":
-                await db.set_fsm(user.id, "awaiting_pdf_file", data)
-                await msg.reply_text("📄 حالا فایل PDF رو بفرست:")
+                if data.get("book_type") == "both":
+                    await db.set_fsm(user.id, "awaiting_pdf_file", data)
+                    await msg.reply_text("📄 حالا فایل PDF رو بفرست:")
+                else:
+                    await db.clear_fsm(user.id)
+                    await msg.reply_text(f"✅ رمان کامل شد. (#{data['book_id']})")
                 return
             if msg.text:
                 bid = data["book_id"]
                 pages = await db.get_pages(bid)
                 next_num = len(pages) + 1
                 await db.add_page(bid, next_num, msg.text)
-                await msg.reply_text(f"✅ صفحه {next_num} ذخیره شد. صفحه بعدی یا `done`:")
+                await msg.reply_text(f"✅ صفحه {next_num} ذخیره شد. بعدی یا `done`:")
             return
 
-        # ─── PDF: فایل ───
         if state == "awaiting_pdf_file":
-            file_id = None
-            if msg.document:
-                file_id = msg.document.file_id
+            file_id = msg.document.file_id if msg.document else None
             if file_id:
                 bid = data["book_id"]
                 await db.add_book_file(bid, "📄 PDF", file_id)
                 await db.clear_fsm(user.id)
-                await msg.reply_text(f"✅ کتاب کامل شد. (#{bid})")
+                await msg.reply_text(f"✅ رمان کامل شد. (#{bid})")
             else:
                 await msg.reply_text("❌ فایل PDF نفرستادی.")
-            return
-
-        # ═══════════ کانال ═══════════
-        if msg.text == "➕ افزودن کانال":
-            await db.set_fsm(user.id, "awaiting_channel")
-            await msg.reply_text("📢 آیدی کانال:\nمثال: @mychannel")
             return
 
         if state == "awaiting_channel":
@@ -778,31 +704,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat = await context.bot.get_chat(msg.text.strip())
                 invite = f"https://t.me/{chat.username}" if chat.username else chat.invite_link
                 await db.add_channel(str(chat.id), "عضویت", invite)
-                await msg.reply_text(f"✅ کانال اضافه شد.")
+                await msg.reply_text("✅ کانال اضافه شد.")
             except Exception as e:
                 await msg.reply_text(f"❌ {e}")
             await db.clear_fsm(user.id)
             return
 
-        if msg.text == "🗑 حذف کانال":
-            channels = await db.get_all_channels()
-            if not channels:
-                await msg.reply_text("📭 کانالی نیست.")
-                return
-            kb = [[InlineKeyboardButton(f"🗑 {c[2]}", callback_data=f"delch_{c[0]}")] for c in channels]
-            await msg.reply_text("کدوم؟", reply_markup=InlineKeyboardMarkup(kb))
-            return
-
-        if msg.text == "📋 مشاهده کانال‌ها":
-            channels = await db.get_all_channels()
-            if not channels:
-                await msg.reply_text("📭 کانالی نیست.")
-                return
-            text = "📋 کانال‌ها:\n\n" + "\n".join(f"• `{c[1]}`" for c in channels)
-            await msg.reply_text(text)
-            return
-
-        # ═══════════ بنر فوری ═══════════
+        # بنر فوری
         if msg.text == "📢 بنر فوری":
             await db.set_fsm(user.id, "awaiting_instant_banner")
             await msg.reply_text("📢 بنر فوری رو بفرست.\n\nبعد بنویس: `ارسال بنر فوری`")
@@ -810,7 +718,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if state == "awaiting_instant_banner":
             await db.set_instant_banner(capture_message(msg))
-            await msg.reply_text("✅ تنظیم شد.\n\nبرای ارسال بنویس: `ارسال بنر فوری`")
+            await msg.reply_text("✅ تنظیم شد.\n\nبنویس: `ارسال بنر فوری`")
             await db.clear_fsm(user.id)
             return
 
@@ -819,21 +727,16 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"✅ ارسال شد به {count} کاربر." if count else "❌ بنری تنظیم نشده.")
             return
 
-        # ═══════════ بنر زمان‌بندی ═══════════
+        # بنر زمان‌بندی
         if msg.text == "⏰ بنر زمان‌بندی":
             await db.set_fsm(user.id, "awaiting_sched_banner_content")
-            await msg.reply_text("⏰ بنر زمان‌بندی\n\nقدم ۱: محتوا رو بفرست.")
+            await msg.reply_text("⏰ محتوا رو بفرست:")
             return
 
         if state == "awaiting_sched_banner_content":
             data["message_json"] = capture_message(msg)
             await db.set_fsm(user.id, "awaiting_sched_banner_time", data)
-            await msg.reply_text(
-                "✅ محتوا ثبت شد.\n\n"
-                "قدم ۲: زمان:\n"
-                "میلادی: `2026-10-01 20:30`\n"
-                "شمسی: `1404-07-15 20:30`"
-            )
+            await msg.reply_text("✅ محتوا ثبت شد.\n\nزمان:\nمیلادی: `2026-10-01 20:30`\nشمسی: `1404-07-15 20:30`")
             return
 
         if state == "awaiting_sched_banner_time":
@@ -843,7 +746,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             await db.add_scheduled_banner(data["message_json"], run_at)
             await db.clear_fsm(user.id)
-            await msg.reply_text(f"✅ بنر زمان‌بندی شد!\n📅 {run_at[:16]}")
+            await msg.reply_text(f"✅ بنر زمان‌بندی شد! 📅 {run_at[:16]}")
             return
 
         if msg.text == "📋 لیست بنرها":
@@ -869,7 +772,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.reply_text("❌ فرمت اشتباه.")
             return
 
-        # ═══════════ لینک یکبار مصرف ═══════════
+        # لینک یکبار مصرف
         if msg.text == "🔗 لینک یکبار مصرف":
             links = await db.get_all_onetime_links()
             kb = [
@@ -893,13 +796,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expire_text = f"{hours} ساعت" if hours > 0 else "بدون انقضا"
             await msg.reply_text(
                 f"✅ لینک ساخته شد!\n\n"
-                f"📖 کتاب: #{bid}\n"
-                f"⏰ اعتبار: {expire_text}\n\n"
+                f"📖 رمان: #{bid}\n"
+                f"⏰ {expire_text}\n\n"
                 f"🔗 `{link}`"
             )
             return
 
-        # ═══════════ آمار ═══════════
+        # آمار
         if msg.text == "📊 آمار ربات":
             users = await db.get_users_count()
             cats = await db.get_all_categories()
@@ -908,10 +811,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             links = await db.get_all_onetime_links()
             support_count = await db.get_support_count()
             text = (
-                f"📊 آمار ربات\n\n"
+                f"📊 آمار\n\n"
                 f"👥 کاربران: {users}\n"
                 f"📁 ژانرها: {len(cats)}\n"
-                f"📚 کتاب‌ها: {len(books)}\n"
+                f"📖 رمان‌ها: {len(books)}\n"
                 f"📢 کانال‌ها: {len(channels)}\n"
                 f"🔗 لینک‌ها: {len(links)}\n"
                 f"📩 پیام‌ها: {support_count}"
@@ -919,7 +822,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(text)
             return
 
-    # ═══════════ فایل معمولی ═══════════
     if msg.photo or msg.video or msg.document or msg.audio or msg.voice or msg.animation:
         await msg.reply_text(FILE_SENT)
         return
@@ -938,13 +840,10 @@ def main():
     if not BOT_TOKEN:
         print("❌ BOT_TOKEN نیست!")
         return
-
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, message_handler))
-
     print("🚀 ربات روشن شد...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
