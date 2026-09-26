@@ -4,8 +4,10 @@ from zoneinfo import ZoneInfo
 
 import database as db
 from banner import broadcast_scheduled_banner
+from config import ADMIN_ID
 
 TZ = ZoneInfo("Asia/Tehran")
+LAST_INACTIVE_CHECK = None
 
 
 async def process_scheduled_banners(context):
@@ -31,3 +33,37 @@ async def process_scheduled_banners(context):
         except Exception as e:
             print(f"[SCHEDULER] {e}")
         await asyncio.sleep(20)
+
+
+async def process_inactive_users(context):
+    """هر ۲۴ ساعت کاربران غیرفعال رو چک میکنه"""
+    while True:
+        try:
+            await asyncio.sleep(86400)  # ۲۴ ساعت
+            days = int(await db.get_setting("inactive_days", "25") or 25)
+            users = await db.get_inactive_users(days)
+            if not users:
+                continue
+
+            # لیست برای ادمین
+            text = f"👥 کاربران غیرفعال ({days} روز):\n\n"
+            for u in users[:50]:
+                uid, uname, fname, last = u
+                text += f"👤 {fname} | `{uid}` | @{uname or 'ندارد'}\n"
+                # پیام اخطار به کاربر
+                try:
+                    await context.bot.send_message(
+                        uid,
+                        "⏰ یه مدته به ربات سر نزدی.\n"
+                        "منتظرتیم! 📖"
+                    )
+                except Exception:
+                    pass
+
+            # ارسال به ادمین
+            try:
+                await context.bot.send_message(ADMIN_ID, text)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[INACTIVE] {e}")
